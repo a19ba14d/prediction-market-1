@@ -20,7 +20,7 @@
     "test:e2e": "npx playwright test",
     "test:unit": "vitest run",
     "prepare": "husky",
-    "db:push": "node scripts/migrate.js"
+    "db:push": "node scripts/migrate.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "3.1044.0",
@@ -53,7 +53,6 @@
     "canvas-confetti": "1.9.4",
     "class-variance-authority": "0.7.1",
     "clsx": "2.1.1",
-    "date-fns": "4.1.0",
     "drizzle-orm": "0.45.2",
     "fumadocs-core": "16.8.7",
     "fumadocs-mdx": "14.3.2",
