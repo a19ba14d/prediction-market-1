@@ -20,6 +20,7 @@ export const maxDuration = 60
 
 interface VolumeJobStats {
   claimed: number
+  claimFailed: number
   completed: number
   updated: number
   skipped: number
@@ -44,6 +45,14 @@ interface ProcessVolumeJobResult {
   reason?: string
 }
 
+interface VolumeJobOutcome {
+  jobId: string
+  conditionId: string | null
+  eventSlug: string | null
+  status: 'updated' | 'skipped' | 'retried' | 'failed'
+  error?: string
+}
+
 export async function GET(request: Request) {
   const authHeader = request.headers.get('authorization')
   if (!isCronAuthorized(authHeader, process.env.CRON_SECRET)) {
@@ -59,50 +68,82 @@ export async function GET(request: Request) {
       skipped: 0,
       retried: 0,
       failed: 0,
+      claimFailed: 0,
       errors: [],
       updatedEventSlugs: [],
     }
     const updatedEventSlugs = new Set<string>()
+    const claimStartedAt = new Date()
+    const claimOutcomes = await Promise.allSettled(
+      pendingJobs.map(pendingJob => claimJob(pendingJob, claimStartedAt)),
+    )
+    const claimedJobs: VolumeJobRow[] = []
 
-    for (const pendingJob of pendingJobs) {
-      const claimedJob = await claimJob(pendingJob, new Date())
-      if (!claimedJob) {
+    for (let index = 0; index < claimOutcomes.length; index += 1) {
+      const outcome = claimOutcomes[index]
+      const pendingJob = pendingJobs[index]
+
+      if (outcome.status === 'fulfilled') {
+        if (outcome.value) {
+          claimedJobs.push(outcome.value)
+        }
         continue
       }
 
-      stats.claimed++
+      stats.claimFailed++
+      const payload = safeParseVolumeJobPayload(pendingJob)
+      stats.errors.push({
+        jobId: pendingJob.id,
+        conditionId: payload?.conditionId ?? null,
+        error: `claim_failed: ${truncateVolumeJobError(outcome.reason)}`,
+      })
+    }
 
-      try {
-        const result = await processClaimedJob(claimedJob)
-        await completeJob(claimedJob)
-        stats.completed++
+    stats.claimed = claimedJobs.length
 
-        if (result.status === 'updated') {
-          stats.updated++
-          if (result.eventSlug) {
-            updatedEventSlugs.add(result.eventSlug)
-          }
-        }
-        else {
-          stats.skipped++
-        }
-      }
-      catch (error) {
-        const payload = safeParseVolumeJobPayload(claimedJob)
-        const retryResult = await scheduleRetry(claimedJob, error)
-        if (retryResult.exhausted) {
-          stats.failed++
-        }
-        else {
-          stats.retried++
-        }
+    const outcomes = await Promise.allSettled(
+      claimedJobs.map(job => processVolumeJob(job)),
+    )
 
+    for (const outcome of outcomes) {
+      if (outcome.status === 'rejected') {
+        stats.failed++
         stats.errors.push({
-          jobId: claimedJob.id,
-          conditionId: payload?.conditionId ?? null,
-          error: truncateVolumeJobError(error),
+          jobId: 'unknown',
+          conditionId: null,
+          error: truncateVolumeJobError(outcome.reason),
         })
+        continue
       }
+
+      const result = outcome.value
+      if (result.status === 'updated') {
+        stats.completed++
+        stats.updated++
+        if (result.eventSlug) {
+          updatedEventSlugs.add(result.eventSlug)
+        }
+        continue
+      }
+
+      if (result.status === 'skipped') {
+        stats.completed++
+        stats.skipped++
+        continue
+      }
+
+      if (result.status === 'failed') {
+        stats.failed++
+      }
+      else {
+        stats.retried++
+      }
+
+      stats.errors.push({
+        jobId: result.jobId,
+        conditionId: result.conditionId,
+        error: result.error ?? 'Unknown volume sync error',
+      })
     }
 
     stats.updatedEventSlugs = Array.from(updatedEventSlugs)
@@ -118,6 +159,44 @@ export async function GET(request: Request) {
       { success: false, error: error?.message ?? 'Unknown error' },
       { status: 500 },
     )
+  }
+}
+
+async function processVolumeJob(job: VolumeJobRow): Promise<VolumeJobOutcome> {
+  try {
+    const result = await processClaimedJob(job)
+    await completeJob(job)
+
+    return {
+      jobId: job.id,
+      conditionId: result.conditionId,
+      eventSlug: result.eventSlug,
+      status: result.status,
+    }
+  }
+  catch (error) {
+    const payload = safeParseVolumeJobPayload(job)
+    let retryResult: Awaited<ReturnType<typeof scheduleRetry>>
+    try {
+      retryResult = await scheduleRetry(job, error)
+    }
+    catch (retryError) {
+      return {
+        jobId: job.id,
+        conditionId: payload?.conditionId ?? null,
+        eventSlug: null,
+        status: 'failed',
+        error: `${truncateVolumeJobError(error)}; retry update failed: ${truncateVolumeJobError(retryError)}`,
+      }
+    }
+
+    return {
+      jobId: job.id,
+      conditionId: payload?.conditionId ?? null,
+      eventSlug: null,
+      status: retryResult.exhausted ? 'failed' : 'retried',
+      error: truncateVolumeJobError(error),
+    }
   }
 }
 
