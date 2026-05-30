@@ -56,7 +56,7 @@
     "clsx": "2.1.1",
     "d3-array": "^3.2.4",
     "drizzle-orm": "0.45.2",
-    "fumadocs-core": "16.8.7",
+    "fumadocs-core": "16.8.12",
     "fumadocs-mdx": "14.3.2",
     "fumadocs-openapi": "10.8.1",
     "fumadocs-ui": "16.8.7",
