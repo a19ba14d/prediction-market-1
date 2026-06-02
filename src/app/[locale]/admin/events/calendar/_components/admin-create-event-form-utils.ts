@@ -23,6 +23,7 @@ import type {
   PrepareFinalizeRequestTx,
   PrepareResponse,
   PrepareTxPlanItem,
+  ProposerWhitelistCheckState,
   SlugCheckResponse,
   SlugValidationState,
 } from './admin-create-event-form-types'
@@ -480,6 +481,7 @@ export function buildStepErrors(
     fundingCheckState: FundingCheckState
     nativeGasCheckState: NativeGasCheckState
     allowedCreatorCheckState: AllowedCreatorCheckState
+    proposerWhitelistCheckState: ProposerWhitelistCheckState
     openRouterCheckState: OpenRouterCheckState
     contentCheckState: ContentCheckState
     hasPendingAiErrors: boolean
@@ -654,6 +656,19 @@ export function buildStepErrors(
       errors.push('Main EOA wallet is not in allowed market creator wallets.')
     }
 
+    if (args.proposerWhitelistCheckState === 'idle' || args.proposerWhitelistCheckState === 'checking') {
+      errors.push('Run the resolution proposers whitelist check first.')
+    }
+    else if (args.proposerWhitelistCheckState === 'no_wallet') {
+      errors.push('Connect the main EOA wallet first.')
+    }
+    else if (args.proposerWhitelistCheckState === 'error') {
+      errors.push('Could not validate resolution proposers whitelist right now.')
+    }
+    else if (args.proposerWhitelistCheckState !== 'ok') {
+      errors.push('Create the resolution proposers whitelist before signing.')
+    }
+
     if (args.slugValidationState === 'idle' || args.slugValidationState === 'checking') {
       errors.push('Run slug availability check first.')
     }
@@ -760,6 +775,9 @@ export function mapSignatureFlowErrorForUser(message: string): string {
   }
   if (/too many subrequests|finalize failed \(5\d\d\)|unexpected server error|internal server error/i.test(message)) {
     return 'Could not finalize the market right now. Please wait a few moments and retry the pending plan.'
+  }
+  if (/creator_whitelist_missing|creator must deploy\/register a proposer whitelist/i.test(message)) {
+    return 'Create the resolution proposers whitelist before signing.'
   }
   if (/request arguments:/i.test(message) || /unknown rpc error/i.test(message)) {
     return 'Could not send transaction right now. Please try again in a few moments.'

@@ -2,6 +2,7 @@
 
 import type { Route } from 'next'
 import type { ChangeEvent } from 'react'
+import type { Address, Hash } from 'viem'
 import type {
   AdminCreateEventFormProps,
   AiValidationIssue,
@@ -23,6 +24,7 @@ import type {
   PreparePayloadBody,
   PrepareResponse,
   PreSignCheckKey,
+  ProposerWhitelistCheckState,
   RecurringOccurrencePreview,
   SignatureExecutionTx,
   SignerOption,
@@ -38,6 +40,7 @@ import type {
 } from '@/lib/admin-sports-create'
 import type { EventCreationDraftRecord } from '@/lib/db/queries/event-creations'
 import type { EventCreationAssetPayload, EventCreationRecurrenceUnit } from '@/lib/event-creation'
+import type { ProposerWhitelistMutationResponse, ProposerWhitelistStatus } from '@/lib/proposer-whitelist'
 import { useAppKitAccount } from '@reown/appkit/react'
 import {
   ArrowLeftIcon,
@@ -56,6 +59,7 @@ import {
   SparkleIcon,
   SquarePenIcon,
   Trash2Icon,
+  UserCheckIcon,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
@@ -115,6 +119,15 @@ import {
   slugifyEventCreationTemplate as slugifyTemplate,
 } from '@/lib/event-creation'
 import { AMOY_CHAIN_ID } from '@/lib/network'
+import {
+  isProposerWhitelistStatusResponse,
+  readProposerWhitelistError,
+} from '@/lib/proposer-whitelist'
+import {
+  CREATOR_PROPOSER_WHITELIST_ABI,
+  CREATOR_PROPOSER_WHITELIST_BYTECODE,
+  CREATOR_PROPOSER_WHITELIST_REGISTRY_ABI,
+} from '@/lib/proposer-whitelist-contracts'
 import { cn } from '@/lib/utils'
 import { defaultViemNetwork, defaultViemRpcUrl } from '@/lib/viem-network'
 import { useUser } from '@/stores/useUser'
@@ -186,6 +199,7 @@ import {
   shortenAddress,
   shouldRetryFinalizeRequest,
 } from './admin-create-event-form-utils'
+import AdminProposersDialog from './AdminProposersDialog'
 
 function getCategorySlugKey(slug: string) {
   return slug.trim().toLowerCase()
@@ -313,6 +327,9 @@ function useAdminCreateEventForm({
   const [nativeGasCheckError, setNativeGasCheckError] = useState('')
   const [allowedCreatorCheckState, setAllowedCreatorCheckState] = useState<AllowedCreatorCheckState>('idle')
   const [allowedCreatorCheckError, setAllowedCreatorCheckError] = useState('')
+  const [proposerWhitelistCheckState, setProposerWhitelistCheckState] = useState<ProposerWhitelistCheckState>('idle')
+  const [proposerWhitelistCheckError, setProposerWhitelistCheckError] = useState('')
+  const [proposerWhitelistStatus, setProposerWhitelistStatus] = useState<ProposerWhitelistStatus | null>(null)
   const [openRouterCheckState, setOpenRouterCheckState] = useState<OpenRouterCheckState>('idle')
   const [openRouterCheckError, setOpenRouterCheckError] = useState('')
   const [contentCheckState, setContentCheckState] = useState<ContentCheckState>('idle')
@@ -322,7 +339,9 @@ function useAdminCreateEventForm({
   const [contentCheckProgressLine, setContentCheckProgressLine] = useState('')
   const [contentCheckError, setContentCheckError] = useState('')
   const [isAddingCreatorWallet, setIsAddingCreatorWallet] = useState(false)
+  const [isCreatingProposerWhitelist, setIsCreatingProposerWhitelist] = useState(false)
   const [creatorWalletDialogOpen, setCreatorWalletDialogOpen] = useState(false)
+  const [proposersDialogOpen, setProposersDialogOpen] = useState(false)
   const [creatorWalletName, setCreatorWalletName] = useState('')
   const [isGeneratingRules, setIsGeneratingRules] = useState(false)
   const [isSigningAuth, setIsSigningAuth] = useState(false)
@@ -342,6 +361,7 @@ function useAdminCreateEventForm({
     funding: true,
     nativeGas: true,
     allowedCreator: true,
+    proposerWhitelist: true,
     slug: true,
     openRouter: true,
     content: true,
@@ -974,6 +994,9 @@ function useAdminCreateEventForm({
   const allowedCreatorHasIssue = allowedCreatorCheckState === 'missing'
     || allowedCreatorCheckState === 'no_wallet'
     || allowedCreatorCheckState === 'error'
+  const proposerWhitelistHasIssue = proposerWhitelistCheckState === 'missing'
+    || proposerWhitelistCheckState === 'no_wallet'
+    || proposerWhitelistCheckState === 'error'
   const slugHasIssue = slugValidationState === 'duplicate' || slugValidationState === 'error'
   const openRouterHasIssue = openRouterCheckState === 'error'
   const contentIndicatorState = useMemo<'checking' | 'ok' | 'error'>(() => {
@@ -1111,6 +1134,7 @@ function useAdminCreateEventForm({
       fundingCheckState,
       nativeGasCheckState,
       allowedCreatorCheckState,
+      proposerWhitelistCheckState,
       openRouterCheckState,
       contentCheckState,
       hasPendingAiErrors: pendingAiIssues.length > 0,
@@ -1134,6 +1158,7 @@ function useAdminCreateEventForm({
     contentCheckError,
     openRouterCheckState,
     pendingAiIssues.length,
+    proposerWhitelistCheckState,
     recurrenceUnit,
     recurringPreviewErrors,
     slugValidationState,
@@ -1330,6 +1355,8 @@ function useAdminCreateEventForm({
     nativeGasHasIssue,
     openRouterCheckState,
     openRouterHasIssue,
+    proposerWhitelistCheckState,
+    proposerWhitelistHasIssue,
     slugHasIssue,
     slugValidationState,
   }), [
@@ -1343,6 +1370,8 @@ function useAdminCreateEventForm({
     nativeGasHasIssue,
     openRouterCheckState,
     openRouterHasIssue,
+    proposerWhitelistCheckState,
+    proposerWhitelistHasIssue,
     slugHasIssue,
     slugValidationState,
   ])
@@ -1374,6 +1403,7 @@ function useAdminCreateEventForm({
       apply('funding', fundingHasIssue, fundingCheckState === 'ok')
       apply('nativeGas', nativeGasHasIssue, nativeGasCheckState === 'ok')
       apply('allowedCreator', allowedCreatorHasIssue, allowedCreatorCheckState === 'ok')
+      apply('proposerWhitelist', proposerWhitelistHasIssue, proposerWhitelistCheckState === 'ok')
       apply('slug', slugHasIssue, slugValidationState === 'unique')
       apply('openRouter', openRouterHasIssue, openRouterCheckState === 'ok')
       apply('content', contentHasIssue, contentIndicatorState === 'ok')
@@ -2806,6 +2836,167 @@ function useAdminCreateEventForm({
     }
   }, [creatorWalletName, eoaAddress, runAllowedCreatorCheck])
 
+  const runProposerWhitelistCheck = useCallback(async () => {
+    setProposerWhitelistCheckState('checking')
+    setProposerWhitelistCheckError('')
+
+    if (!eoaAddress) {
+      setProposerWhitelistStatus(null)
+      setProposerWhitelistCheckState('no_wallet')
+      return false
+    }
+
+    try {
+      const response = await fetchAdminApi(`/proposer-whitelists?creator=${encodeURIComponent(eoaAddress)}`, {
+        method: 'GET',
+        cache: 'no-store',
+      })
+      const payload = await response.json().catch(() => null) as unknown
+      const apiError = readApiError(payload)
+
+      if (!response.ok || apiError || !isProposerWhitelistStatusResponse(payload) || !payload.status) {
+        throw new Error(apiError || `Proposer whitelist check failed (${response.status})`)
+      }
+
+      setProposerWhitelistStatus(payload.status)
+      const hasWhitelist = Boolean(payload.status.whitelistAddress)
+      setProposerWhitelistCheckState(hasWhitelist ? 'ok' : 'missing')
+      return hasWhitelist
+    }
+    catch (error) {
+      console.error('Error validating proposer whitelist:', error)
+      setProposerWhitelistStatus(null)
+      setProposerWhitelistCheckState('error')
+      setProposerWhitelistCheckError('Could not validate resolution proposers whitelist.')
+      return false
+    }
+  }, [eoaAddress])
+
+  function isProposerWhitelistMutationResponse(payload: unknown): payload is ProposerWhitelistMutationResponse {
+    if (!payload || typeof payload !== 'object') {
+      return false
+    }
+    const candidate = payload as Partial<ProposerWhitelistMutationResponse>
+    return Boolean(candidate.status) && Array.isArray(candidate.txHashes)
+  }
+
+  const createProposerWhitelist = useCallback(async () => {
+    if (!eoaAddress) {
+      toast.error('Connect wallet first.')
+      return
+    }
+
+    setIsCreatingProposerWhitelist(true)
+    try {
+      const currentStatus = proposerWhitelistStatus?.creator.toLowerCase() === eoaAddress.toLowerCase()
+        ? proposerWhitelistStatus
+        : null
+      if (currentStatus?.whitelistAddress) {
+        setProposerWhitelistCheckState('ok')
+        toast.success('Resolution proposers whitelist already exists.')
+        return
+      }
+
+      if (currentStatus?.hasServerSigner && !walletClient) {
+        const response = await fetchAdminApi('/proposer-whitelists', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            action: 'create',
+            creator: eoaAddress,
+            proposers: [],
+          }),
+        })
+        const payload = await response.json().catch(() => null) as unknown
+        const apiError = readApiError(payload)
+        if (!response.ok || apiError || !isProposerWhitelistMutationResponse(payload)) {
+          throw new Error(apiError || `Could not create whitelist (${response.status})`)
+        }
+        setProposerWhitelistStatus(payload.status)
+        setProposerWhitelistCheckState(payload.status.whitelistAddress ? 'ok' : 'missing')
+        toast.success('Resolution proposers whitelist created.')
+        return
+      }
+
+      if (!walletClient) {
+        throw new Error('Wallet client not available.')
+      }
+      if (walletClient.chain?.id && walletClient.chain.id !== targetChainId) {
+        throw new Error(`Switch wallet to ${getChainLabel()} before creating whitelist.`)
+      }
+      const activePublicClient = publicClient ?? createPublicClient({
+        chain: defaultViemNetwork,
+        transport: http(defaultViemRpcUrl),
+      })
+      const registryAddress = currentStatus?.registryAddress ?? proposerWhitelistStatus?.registryAddress
+      if (!registryAddress) {
+        throw new Error('Registry address is unavailable.')
+      }
+
+      async function waitForTx(hash: Hash) {
+        const receipt = await activePublicClient.waitForTransactionReceipt({ hash })
+        if (receipt.status !== 'success') {
+          throw new Error(`Transaction failed: ${hash}`)
+        }
+        return receipt
+      }
+
+      const creator = eoaAddress as Address
+      const deployHash = await runWithSignaturePrompt(() => walletClient.deployContract({
+        account: creator,
+        chain: walletClient.chain,
+        abi: CREATOR_PROPOSER_WHITELIST_ABI,
+        bytecode: CREATOR_PROPOSER_WHITELIST_BYTECODE,
+        args: [creator, []],
+      }), {
+        title: 'Create whitelist',
+        description: 'Open your wallet and approve the whitelist deployment.',
+      })
+      const deployReceipt = await waitForTx(deployHash)
+      const whitelistAddress = deployReceipt.contractAddress && isAddress(deployReceipt.contractAddress)
+        ? getAddress(deployReceipt.contractAddress) as Address
+        : null
+      if (!whitelistAddress) {
+        throw new Error('Whitelist deployment did not return a contract address.')
+      }
+
+      const registerHash = await runWithSignaturePrompt(() => walletClient.writeContract({
+        account: creator,
+        chain: walletClient.chain,
+        address: registryAddress,
+        abi: CREATOR_PROPOSER_WHITELIST_REGISTRY_ABI,
+        functionName: 'registerWhitelist',
+        args: [whitelistAddress],
+      }), {
+        title: 'Register whitelist',
+        description: 'Open your wallet and approve the registry transaction.',
+      })
+      await waitForTx(registerHash)
+
+      await runProposerWhitelistCheck()
+      toast.success('Resolution proposers whitelist created.')
+    }
+    catch (error) {
+      console.error('Error creating proposer whitelist:', error)
+      setProposerWhitelistCheckState('error')
+      setProposerWhitelistCheckError(readProposerWhitelistError(error))
+      toast.error(readProposerWhitelistError(error))
+    }
+    finally {
+      setIsCreatingProposerWhitelist(false)
+    }
+  }, [
+    eoaAddress,
+    proposerWhitelistStatus,
+    publicClient,
+    runProposerWhitelistCheck,
+    runWithSignaturePrompt,
+    targetChainId,
+    walletClient,
+  ])
+
   const runFundingCheck = useCallback(async () => {
     setFundingCheckState('checking')
     setFundingCheckError('')
@@ -2936,10 +3127,11 @@ function useAdminCreateEventForm({
     }
 
     lastPreSignChecksCompletedRef.current = false
-    const [fundingOk, nativeGasOk, creatorOk, openRouterOk, slugOk] = await Promise.all([
+    const [fundingOk, nativeGasOk, creatorOk, proposerWhitelistOk, openRouterOk, slugOk] = await Promise.all([
       runFundingCheck(),
       runNativeGasCheck(),
       runAllowedCreatorCheck(),
+      runProposerWhitelistCheck(),
       runOpenRouterCheck(),
       runSlugCheck(),
     ])
@@ -2957,13 +3149,13 @@ function useAdminCreateEventForm({
       setContentCheckProgressLine('')
     }
 
-    const nextResult = fundingOk && nativeGasOk && creatorOk && openRouterOk && slugOk && contentOk
+    const nextResult = fundingOk && nativeGasOk && creatorOk && proposerWhitelistOk && openRouterOk && slugOk && contentOk
     lastPreSignChecksFingerprintRef.current = preSignChecksFingerprint
     lastPreSignChecksCompletedRef.current = true
     lastPreSignChecksResultRef.current = nextResult
 
     return nextResult
-  }, [preSignChecksFingerprint, runAllowedCreatorCheck, runContentCheck, runFundingCheck, runNativeGasCheck, runOpenRouterCheck, runSlugCheck])
+  }, [preSignChecksFingerprint, runAllowedCreatorCheck, runContentCheck, runFundingCheck, runNativeGasCheck, runOpenRouterCheck, runProposerWhitelistCheck, runSlugCheck])
 
   const getFeeOverridesForTx = useCallback(async (chainId: number) => {
     if (!publicClient) {
@@ -3965,6 +4157,7 @@ function useAdminCreateEventForm({
       fundingCheckState,
       nativeGasCheckState,
       allowedCreatorCheckState,
+      proposerWhitelistCheckState,
       openRouterCheckState,
       contentCheckState,
       hasPendingAiErrors: pendingAiIssues.length > 0,
@@ -3996,6 +4189,7 @@ function useAdminCreateEventForm({
     contentCheckError,
     openRouterCheckState,
     pendingAiIssues.length,
+    proposerWhitelistCheckState,
     recurrenceUnit,
     recurringPreviewErrors,
     showFirstError,
@@ -4341,6 +4535,7 @@ function useAdminCreateEventForm({
 
   const isStepFourPreSignChecksRunning = fundingCheckState === 'checking'
     || allowedCreatorCheckState === 'checking'
+    || proposerWhitelistCheckState === 'checking'
     || slugValidationState === 'checking'
     || openRouterCheckState === 'checking'
     || contentCheckState === 'checking'
@@ -4393,6 +4588,9 @@ function useAdminCreateEventForm({
     nativeGasCheckError,
     allowedCreatorCheckState,
     allowedCreatorCheckError,
+    proposerWhitelistCheckState,
+    proposerWhitelistCheckError,
+    proposerWhitelistStatus,
     openRouterCheckState,
     openRouterCheckError,
     contentCheckState,
@@ -4402,8 +4600,11 @@ function useAdminCreateEventForm({
     contentCheckProgressLine,
     contentCheckError,
     isAddingCreatorWallet,
+    isCreatingProposerWhitelist,
     creatorWalletDialogOpen,
     setCreatorWalletDialogOpen,
+    proposersDialogOpen,
+    setProposersDialogOpen,
     creatorWalletName,
     setCreatorWalletName,
     isGeneratingRules,
@@ -4488,6 +4689,7 @@ function useAdminCreateEventForm({
     fundingHasIssue,
     nativeGasHasIssue,
     allowedCreatorHasIssue,
+    proposerWhitelistHasIssue,
     slugHasIssue,
     openRouterHasIssue,
     contentHasIssue,
@@ -4544,6 +4746,10 @@ function useAdminCreateEventForm({
     continueFromFinalPreview,
     generateRulesWithAi,
     addCurrentWalletToAllowedCreators,
+    createProposerWhitelist,
+    runProposerWhitelistCheck,
+    setProposerWhitelistStatus,
+    setProposerWhitelistCheckState,
     isStepFourPreSignChecksRunning,
     stepFourNextButtonContent,
     creationMode,
@@ -4612,6 +4818,9 @@ export default function AdminCreateEventForm({
     nativeGasCheckError,
     allowedCreatorCheckState,
     allowedCreatorCheckError,
+    proposerWhitelistCheckState,
+    proposerWhitelistCheckError,
+    proposerWhitelistStatus,
     openRouterCheckState,
     openRouterCheckError,
     contentCheckState,
@@ -4619,8 +4828,11 @@ export default function AdminCreateEventForm({
     contentCheckProgressLine,
     contentCheckError,
     isAddingCreatorWallet,
+    isCreatingProposerWhitelist,
     creatorWalletDialogOpen,
     setCreatorWalletDialogOpen,
+    proposersDialogOpen,
+    setProposersDialogOpen,
     creatorWalletName,
     setCreatorWalletName,
     isGeneratingRules,
@@ -4692,6 +4904,7 @@ export default function AdminCreateEventForm({
     fundingHasIssue,
     nativeGasHasIssue,
     allowedCreatorHasIssue,
+    proposerWhitelistHasIssue,
     slugHasIssue,
     openRouterHasIssue,
     contentHasIssue,
@@ -4743,6 +4956,10 @@ export default function AdminCreateEventForm({
     continueFromFinalPreview,
     generateRulesWithAi,
     addCurrentWalletToAllowedCreators,
+    createProposerWhitelist,
+    runProposerWhitelistCheck,
+    setProposerWhitelistStatus,
+    setProposerWhitelistCheckState,
     stepFourNextButtonContent,
   } = hook
 
@@ -6290,6 +6507,19 @@ export default function AdminCreateEventForm({
         </DialogContent>
       </Dialog>
 
+      <AdminProposersDialog
+        open={proposersDialogOpen}
+        onOpenChange={setProposersDialogOpen}
+        initialCreatorAddress={eoaAddress}
+        onStatusChange={(nextStatus) => {
+          if (!eoaAddress || nextStatus.creator.toLowerCase() !== eoaAddress.toLowerCase()) {
+            return
+          }
+          setProposerWhitelistStatus(nextStatus)
+          setProposerWhitelistCheckState(nextStatus.whitelistAddress ? 'ok' : 'missing')
+        }}
+      />
+
       <Dialog open={recurringRequiresServerWalletSetup} onOpenChange={() => {}}>
         <DialogContent
           showCloseButton={false}
@@ -6815,6 +7045,87 @@ export default function AdminCreateEventForm({
               <div className="flex items-center justify-between gap-3">
                 <button
                   type="button"
+                  onClick={() => togglePreSignCheck('proposerWhitelist', proposerWhitelistHasIssue)}
+                  disabled={proposerWhitelistHasIssue}
+                  className={cn(
+                    'flex items-center gap-2 text-left',
+                    proposerWhitelistHasIssue ? 'cursor-default' : 'cursor-pointer',
+                  )}
+                >
+                  {expandedPreSignChecks.proposerWhitelist
+                    ? <ChevronDownIcon className="size-5 text-muted-foreground" />
+                    : (
+                        <ChevronRightIcon className="size-5 text-muted-foreground" />
+                      )}
+                  <p className="text-xl font-semibold text-foreground">Resolution proposers whitelist</p>
+                </button>
+                <CheckIndicator
+                  state={
+                    proposerWhitelistCheckState === 'ok'
+                      ? 'ok'
+                      : (proposerWhitelistCheckState === 'checking' || proposerWhitelistCheckState === 'idle')
+                          ? 'checking'
+                          : 'error'
+                  }
+                />
+              </div>
+              {expandedPreSignChecks.proposerWhitelist && (
+                <div className="mt-2 space-y-2">
+                  <div className="flex items-center gap-1.5">
+                    <p className="font-mono text-sm break-all text-muted-foreground">
+                      {proposerWhitelistStatus?.whitelistAddress ?? 'Whitelist not registered'}
+                    </p>
+                    {proposerWhitelistStatus?.whitelistAddress && (
+                      <UserCheckIcon className="size-4 shrink-0 text-emerald-500" />
+                    )}
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    {proposerWhitelistCheckState === 'missing' && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-7"
+                        onClick={() => void createProposerWhitelist()}
+                        disabled={isCreatingProposerWhitelist || !eoaAddress}
+                      >
+                        {isCreatingProposerWhitelist && <Loader2Icon className="mr-2 size-3.5 animate-spin" />}
+                        Create whitelist
+                      </Button>
+                    )}
+                    {proposerWhitelistCheckState === 'ok' && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-7"
+                        onClick={() => setProposersDialogOpen(true)}
+                      >
+                        <UserCheckIcon className="mr-2 size-3.5" />
+                        Manage proposers
+                      </Button>
+                    )}
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-7"
+                      onClick={() => void runProposerWhitelistCheck()}
+                      disabled={proposerWhitelistCheckState === 'checking' || !eoaAddress}
+                    >
+                      Re-check
+                    </Button>
+                  </div>
+                </div>
+              )}
+              {proposerWhitelistCheckError && <p className="mt-2 text-sm text-destructive">{proposerWhitelistCheckError}</p>}
+            </div>
+
+            <div className="rounded-md border px-4 py-3">
+              <div className="flex items-center justify-between gap-3">
+                <button
+                  type="button"
                   onClick={() => togglePreSignCheck('slug', slugHasIssue)}
                   disabled={slugHasIssue}
                   className={cn(
@@ -7313,6 +7624,7 @@ export default function AdminCreateEventForm({
                   && (
                     fundingCheckState === 'checking'
                     || allowedCreatorCheckState === 'checking'
+                    || proposerWhitelistCheckState === 'checking'
                     || slugValidationState === 'checking'
                     || openRouterCheckState === 'checking'
                     || contentCheckState === 'checking'

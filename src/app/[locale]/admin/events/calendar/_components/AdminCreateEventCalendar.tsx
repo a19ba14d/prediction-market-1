@@ -8,7 +8,7 @@ import interactionPlugin from '@fullcalendar/interaction'
 import listPlugin from '@fullcalendar/list'
 import FullCalendar from '@fullcalendar/react'
 import timeGridPlugin from '@fullcalendar/timegrid'
-import { CalendarPlusIcon, ClipboardListIcon, CopyIcon, ImageIcon, SquarePenIcon, Trash2Icon } from 'lucide-react'
+import { CalendarPlusIcon, ClipboardListIcon, CopyIcon, ImageIcon, SquarePenIcon, Trash2Icon, UserCheckIcon } from 'lucide-react'
 import { useEffect, useReducer, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import EventIconImage from '@/components/EventIconImage'
@@ -36,6 +36,7 @@ import { useRouter } from '@/i18n/navigation'
 import { formatDateTimeLocalValue, normalizeDateTimeLocalValue } from '@/lib/datetime-local'
 import { expandEventCreationOccurrences } from '@/lib/event-creation'
 import { cn } from '@/lib/utils'
+import AdminProposersDialog from './AdminProposersDialog'
 
 const COPY_EVENT_FALLBACK_ICON_CLASS_NAME = 'flex size-14 items-center justify-center rounded-lg border text-muted-foreground'
 
@@ -145,6 +146,7 @@ function useCreateEventCalendarState() {
   const [isCreatingDraft, setIsCreatingDraft] = useState(false)
   const [draftsDialogOpen, setDraftsDialogOpen] = useState(false)
   const [copyDialogOpen, setCopyDialogOpen] = useState(false)
+  const [proposersDialogOpen, setProposersDialogOpen] = useState(false)
   const [copySearch, setCopySearch] = useState('')
   const [copyResults, setCopyResults] = useReducer(
     (_current: AdminEventSearchResult[], next: AdminEventSearchResult[]) => next,
@@ -304,6 +306,8 @@ function useCreateEventCalendarState() {
     setDraftsDialogOpen,
     copyDialogOpen,
     setCopyDialogOpen,
+    proposersDialogOpen,
+    setProposersDialogOpen,
     copySearch,
     setCopySearch,
     copyResults,
@@ -333,6 +337,8 @@ export default function AdminCreateEventCalendar() {
     setDraftsDialogOpen,
     copyDialogOpen,
     setCopyDialogOpen,
+    proposersDialogOpen,
+    setProposersDialogOpen,
     copySearch,
     setCopySearch,
     copyResults,
@@ -778,6 +784,10 @@ export default function AdminCreateEventCalendar() {
               <CopyIcon className="size-4" />
               Clone
             </Button>
+            <Button type="button" variant="outline" className="justify-center" onClick={() => setProposersDialogOpen(true)}>
+              <UserCheckIcon className="size-4" />
+              Proposers
+            </Button>
           </div>
         </div>
 
@@ -950,6 +960,11 @@ export default function AdminCreateEventCalendar() {
               </DialogContent>
             </Dialog>
           )}
+
+      <AdminProposersDialog
+        open={proposersDialogOpen}
+        onOpenChange={setProposersDialogOpen}
+      />
 
       <style jsx global>
         {`
