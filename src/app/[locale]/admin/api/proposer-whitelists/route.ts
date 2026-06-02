@@ -122,6 +122,10 @@ export async function GET(request: Request) {
     }
 
     const creator = new URL(request.url).searchParams.get('creator')
+    if (creator && !isAddress(creator)) {
+      return NextResponse.json({ error: 'Invalid creator address.' }, { status: 400 })
+    }
+
     return NextResponse.json(await buildStatusResponse(creator))
   }
   catch (error) {
@@ -148,7 +152,14 @@ export async function POST(request: Request) {
     }
 
     const creator = getAddress(parsed.data.creator) as Address
-    const proposers = normalizeProposerAddressList(parsed.data.proposers)
+    let proposers: Address[]
+    try {
+      proposers = normalizeProposerAddressList(parsed.data.proposers)
+    }
+    catch (error) {
+      return NextResponse.json({ error: readProposerWhitelistError(error) }, { status: 400 })
+    }
+
     if (parsed.data.action !== 'create' && proposers.length === 0) {
       return NextResponse.json({ error: 'At least one proposer wallet is required.' }, { status: 400 })
     }

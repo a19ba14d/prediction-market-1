@@ -489,11 +489,16 @@ function useAdminCreateEventForm({
 
     return isKnownLeagueSlug ? normalizedLeagueSlug : undefined
   }, [isCustomLeagueSlug, isKnownLeagueSlug, normalizedLeagueSlug])
+  const selectedCreatorAddress = useMemo(() => {
+    const candidate = automaticWalletAddress.trim() || eoaAddress || ''
+    if (!candidate || !isAddress(candidate)) {
+      return null
+    }
+    return getAddress(candidate)
+  }, [automaticWalletAddress, eoaAddress])
   const slugWalletAddress = useMemo(
-    () => creationMode === 'recurring'
-      ? automaticWalletAddress.trim()
-      : (eoaAddress || ''),
-    [automaticWalletAddress, creationMode, eoaAddress],
+    () => selectedCreatorAddress ?? '',
+    [selectedCreatorAddress],
   )
   const creatorSlugTail = useMemo(
     () => buildEventCreationWalletTail(slugWalletAddress),
@@ -549,7 +554,7 @@ function useAdminCreateEventForm({
   const preSignChecksFingerprint = useMemo(() => JSON.stringify({
     eoaAddress: eoaAddress?.toLowerCase() ?? '',
     creationMode,
-    creator: automaticWalletAddress.trim().toLowerCase(),
+    creator: selectedCreatorAddress?.toLowerCase() ?? '',
     recurrenceUnit,
     recurrenceInterval,
     targetChainId,
@@ -581,13 +586,13 @@ function useAdminCreateEventForm({
       resolutionRules: form.resolutionRules.trim(),
     },
   }), [
-    automaticWalletAddress,
     creationMode,
     eoaAddress,
     form,
     marketCount,
     recurrenceInterval,
     recurrenceUnit,
+    selectedCreatorAddress,
     sportsDerivedContent.payload,
     targetChainId,
   ])
@@ -2834,14 +2839,14 @@ function useAdminCreateEventForm({
     setProposerWhitelistCheckState('checking')
     setProposerWhitelistCheckError('')
 
-    if (!eoaAddress) {
+    if (!selectedCreatorAddress) {
       setProposerWhitelistStatus(null)
       setProposerWhitelistCheckState('no_wallet')
       return false
     }
 
     try {
-      const response = await fetchAdminApi(`/proposer-whitelists?creator=${encodeURIComponent(eoaAddress)}`, {
+      const response = await fetchAdminApi(`/proposer-whitelists?creator=${encodeURIComponent(selectedCreatorAddress)}`, {
         method: 'GET',
         cache: 'no-store',
       })
@@ -2864,7 +2869,7 @@ function useAdminCreateEventForm({
       setProposerWhitelistCheckError(t('Could not validate resolution proposers whitelist.'))
       return false
     }
-  }, [eoaAddress, t])
+  }, [selectedCreatorAddress, t])
 
   const runFundingCheck = useCallback(async () => {
     setFundingCheckState('checking')
@@ -4107,6 +4112,9 @@ function useAdminCreateEventForm({
     setNativeGasCheckError('')
     setAllowedCreatorCheckState('idle')
     setAllowedCreatorCheckError('')
+    setProposerWhitelistCheckState('idle')
+    setProposerWhitelistCheckError('')
+    setProposerWhitelistStatus(null)
     setOpenRouterCheckState('idle')
     setOpenRouterCheckError('')
     setContentCheckState('idle')
@@ -4194,6 +4202,9 @@ function useAdminCreateEventForm({
     setNativeGasCheckError('')
     setAllowedCreatorCheckState('idle')
     setAllowedCreatorCheckError('')
+    setProposerWhitelistCheckState('idle')
+    setProposerWhitelistCheckError('')
+    setProposerWhitelistStatus(null)
     setOpenRouterCheckState('idle')
     setOpenRouterCheckError('')
     setContentCheckState('idle')
@@ -4421,6 +4432,7 @@ function useAdminCreateEventForm({
     router,
     eoaAddress,
     eoaShortAddress,
+    selectedCreatorAddress,
     currentStep,
     maxVisitedStep,
     form,
@@ -4656,6 +4668,7 @@ export default function AdminCreateEventForm({
     router,
     eoaAddress,
     eoaShortAddress,
+    selectedCreatorAddress,
     currentStep,
     maxVisitedStep,
     form,
@@ -6376,9 +6389,9 @@ export default function AdminCreateEventForm({
       <AdminProposersDialog
         open={proposersDialogOpen}
         onOpenChange={setProposersDialogOpen}
-        initialCreatorAddress={eoaAddress}
+        initialCreatorAddress={selectedCreatorAddress}
         onStatusChange={(nextStatus) => {
-          if (!eoaAddress || nextStatus.creator.toLowerCase() !== eoaAddress.toLowerCase()) {
+          if (!selectedCreatorAddress || nextStatus.creator.toLowerCase() !== selectedCreatorAddress.toLowerCase()) {
             return
           }
           setProposerWhitelistStatus(nextStatus)
@@ -6954,7 +6967,7 @@ export default function AdminCreateEventForm({
                         size="sm"
                         className="h-7"
                         onClick={() => setProposersDialogOpen(true)}
-                        disabled={!eoaAddress}
+                        disabled={!selectedCreatorAddress}
                       >
                         {t('Create whitelist')}
                       </Button>
@@ -6977,7 +6990,7 @@ export default function AdminCreateEventForm({
                       size="sm"
                       className="h-7"
                       onClick={() => void runProposerWhitelistCheck()}
-                      disabled={proposerWhitelistCheckState === 'checking' || !eoaAddress}
+                      disabled={proposerWhitelistCheckState === 'checking' || !selectedCreatorAddress}
                     >
                       {t('Re-check')}
                     </Button>

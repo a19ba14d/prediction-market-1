@@ -73,14 +73,47 @@ export function normalizeProposerAddressList(value: string | string[]) {
   return [...deduped.values()]
 }
 
-export function isProposerWhitelistStatusResponse(payload: unknown): payload is ProposerWhitelistStatusResponse {
-  if (!payload || typeof payload !== 'object') {
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+function isAddressValue(value: unknown): value is Address {
+  return typeof value === 'string' && isAddress(value)
+}
+
+function isProposerWhitelistCreatorOption(value: unknown): value is ProposerWhitelistCreatorOption {
+  if (!isRecord(value)) {
     return false
   }
-  const candidate = payload as Partial<ProposerWhitelistStatusResponse>
-  return typeof candidate.registryAddress === 'string'
-    && Array.isArray(candidate.creators)
-    && (candidate.status === null || typeof candidate.status === 'object')
+
+  return isAddressValue(value.address)
+    && typeof value.displayName === 'string'
+    && typeof value.shortAddress === 'string'
+    && typeof value.hasServerSigner === 'boolean'
+}
+
+function isProposerWhitelistStatus(value: unknown): value is ProposerWhitelistStatus {
+  if (!isRecord(value)) {
+    return false
+  }
+
+  return isAddressValue(value.creator)
+    && isAddressValue(value.registryAddress)
+    && (value.whitelistAddress === null || isAddressValue(value.whitelistAddress))
+    && Array.isArray(value.proposers)
+    && value.proposers.every(isAddressValue)
+    && typeof value.hasServerSigner === 'boolean'
+}
+
+export function isProposerWhitelistStatusResponse(payload: unknown): payload is ProposerWhitelistStatusResponse {
+  if (!isRecord(payload)) {
+    return false
+  }
+
+  return isAddressValue(payload.registryAddress)
+    && Array.isArray(payload.creators)
+    && payload.creators.every(isProposerWhitelistCreatorOption)
+    && (payload.status === null || isProposerWhitelistStatus(payload.status))
 }
 
 export function readProposerWhitelistError(error: unknown) {

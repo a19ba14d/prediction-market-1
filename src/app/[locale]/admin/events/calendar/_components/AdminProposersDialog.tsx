@@ -232,12 +232,12 @@ export default function AdminProposersDialog({
     }
     const preferred = getPreferredCreator({
       initialCreatorAddress,
-      selectedCreator,
+      selectedCreator: null,
       connectedAddress,
       creators: [],
     })
     void loadStatus(preferred)
-  }, [connectedAddress, initialCreatorAddress, loadStatus, open, selectedCreator])
+  }, [connectedAddress, initialCreatorAddress, loadStatus, open])
   /* eslint-enable react-you-might-not-need-an-effect/no-event-handler */
 
   async function runServerMutation(action: 'create' | 'add' | 'remove', proposers: Address[]) {
