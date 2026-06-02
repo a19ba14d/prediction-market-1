@@ -3,7 +3,7 @@
 import type { Address, Hash } from 'viem'
 import type { ProposerWhitelistCreatorOption, ProposerWhitelistMutationResponse, ProposerWhitelistStatus, ProposerWhitelistStatusResponse } from '@/lib/proposer-whitelist'
 import { useAppKitAccount } from '@reown/appkit/react'
-import { CheckCircle2Icon, LightbulbIcon, Loader2Icon, PlusIcon, UserCheckIcon, XIcon } from 'lucide-react'
+import { CheckCircle2Icon, CircleIcon, Loader2Icon, PlusIcon, UserCheckIcon, XIcon } from 'lucide-react'
 import { useExtracted } from 'next-intl'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
@@ -82,6 +82,21 @@ function mergeCreatorOptions(input: {
   return [...byAddress.values()]
 }
 
+function isActionableCreator(input: {
+  creator: ProposerWhitelistCreatorOption
+  connectedAddress: Address | null
+}) {
+  if (input.creator.hasServerSigner) {
+    return true
+  }
+
+  if (!input.connectedAddress) {
+    return false
+  }
+
+  return input.creator.address.toLowerCase() === input.connectedAddress.toLowerCase()
+}
+
 function isMutationResponse(payload: unknown): payload is ProposerWhitelistMutationResponse {
   if (!payload || typeof payload !== 'object') {
     return false
@@ -132,7 +147,8 @@ export default function AdminProposersDialog({
   const [walletInput, setWalletInput] = useState('')
 
   const creatorOptions = useMemo(
-    () => mergeCreatorOptions({ creators, connectedAddress, connectedLabel: t('EOA wallet') }),
+    () => mergeCreatorOptions({ creators, connectedAddress, connectedLabel: t('EOA wallet') })
+      .filter(creator => isActionableCreator({ creator, connectedAddress })),
     [connectedAddress, creators, t],
   )
   const selectedOption = creatorOptions.find(item => selectedCreator && item.address.toLowerCase() === selectedCreator.toLowerCase()) ?? null
@@ -148,6 +164,9 @@ export default function AdminProposersDialog({
 
     if (message === 'Creator wallet needs POL for gas before updating proposer whitelist.') {
       return t('Creator wallet needs POL for gas before updating proposer whitelist.')
+    }
+    if (message === 'Transaction could not be sent because the gas fee is below the current network minimum.') {
+      return t('Transaction could not be sent because the gas fee is below the current network minimum.')
     }
     if (message === 'Wallet signature was rejected.') {
       return t('Wallet signature was rejected.')
@@ -408,19 +427,16 @@ export default function AdminProposersDialog({
           <div className="grid gap-2">
             <div className="flex items-center justify-between gap-3">
               <Label>{t('Creator wallet')}</Label>
-              <div
-                className={cn(
-                  'inline-flex items-center gap-1.5 text-xs font-medium',
-                  status?.whitelistAddress ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground',
-                )}
-              >
-                <LightbulbIcon
+              <div className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                <CircleIcon
                   className={cn(
-                    'size-3.5',
-                    status?.whitelistAddress ? 'fill-emerald-500 text-emerald-500' : 'text-muted-foreground/70',
+                    'size-3.5 fill-current stroke-none',
+                    status?.whitelistAddress ? 'text-emerald-500' : 'text-muted-foreground/70',
                   )}
                 />
-                <span>{status?.whitelistAddress ? t('Whitelist registered') : t('Whitelist not registered')}</span>
+                <span className="text-muted-foreground">
+                  {status?.whitelistAddress ? t('Whitelist registered') : t('Whitelist not registered')}
+                </span>
               </div>
             </div>
             <Select

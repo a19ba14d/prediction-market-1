@@ -942,6 +942,7 @@
   "jZb3d7": "Volver a comprobar",
   "B1TfR5": "Wallet EOA",
   "yptOZm": "La wallet creator necesita POL para gas antes de actualizar la whitelist de proposers.",
+  "pBeyd3": "La transacción no pudo enviarse porque la tarifa de gas está por debajo del mínimo actual de la red.",
   "QbZWpo": "La firma en la wallet fue rechazada.",
   "VPp6Fk": "Solo la wallet creator seleccionada puede actualizar esta whitelist.",
   "y2NM8T": "La dirección cero no está permitida.",

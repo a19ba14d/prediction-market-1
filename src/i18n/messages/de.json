@@ -942,6 +942,7 @@
   "jZb3d7": "Erneut prüfen",
   "B1TfR5": "EOA-Wallet",
   "yptOZm": "Die Creator-Wallet benötigt POL für Gas, bevor die Proposer-Whitelist aktualisiert werden kann.",
+  "pBeyd3": "Die Transaktion konnte nicht gesendet werden, weil die Gasgebühr unter dem aktuellen Mindestwert des Netzwerks liegt.",
   "QbZWpo": "Die Wallet-Signatur wurde abgelehnt.",
   "VPp6Fk": "Nur die ausgewählte Creator-Wallet kann diese Whitelist aktualisieren.",
   "y2NM8T": "Die Nulladresse ist nicht erlaubt.",

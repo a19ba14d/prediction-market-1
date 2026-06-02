@@ -942,6 +942,7 @@
   "jZb3d7": "重新检查",
   "B1TfR5": "EOA 钱包",
   "yptOZm": "Creator wallet 需要 POL 支付 gas，才能更新 proposer whitelist。",
+  "pBeyd3": "由于 gas 费用低于当前网络要求的最低值，交易无法发送。",
   "QbZWpo": "钱包签名已被拒绝。",
   "VPp6Fk": "只有所选的 creator wallet 可以更新此 whitelist。",
   "y2NM8T": "不允许使用零地址。",

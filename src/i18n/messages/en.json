@@ -942,6 +942,7 @@
   "jZb3d7": "Re-check",
   "B1TfR5": "EOA wallet",
   "yptOZm": "Creator wallet needs POL for gas before updating proposer whitelist.",
+  "pBeyd3": "Transaction could not be sent because the gas fee is below the current network minimum.",
   "QbZWpo": "Wallet signature was rejected.",
   "VPp6Fk": "Only the selected creator wallet can update this whitelist.",
   "y2NM8T": "Zero address is not allowed.",

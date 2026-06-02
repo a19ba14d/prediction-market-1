@@ -33,6 +33,14 @@ export interface ProposerWhitelistMutationResponse {
   txHashes: Hash[]
 }
 
+const GAS_FEE_TOO_LOW_PATTERNS = [
+  'gas price below minimum',
+  'transaction underpriced',
+  'replacement transaction underpriced',
+  'max fee per gas less than block base fee',
+  'fee cap less than block base fee',
+]
+
 function getClientCreatorProposerWhitelistRegistryAddress() {
   return CREATOR_PROPOSER_WHITELIST_REGISTRY_ADDRESS
 }
@@ -86,6 +94,13 @@ export function readProposerWhitelistError(error: unknown) {
     || lower.includes('insufficient balance')
   ) {
     return 'Creator wallet needs POL for gas before updating proposer whitelist.'
+  }
+
+  if (
+    GAS_FEE_TOO_LOW_PATTERNS.some(pattern => lower.includes(pattern))
+    || (lower.includes('gas tip cap') && lower.includes('minimum needed'))
+  ) {
+    return 'Transaction could not be sent because the gas fee is below the current network minimum.'
   }
 
   if (lower.includes('user rejected') || lower.includes('user denied') || lower.includes('rejected the request')) {
