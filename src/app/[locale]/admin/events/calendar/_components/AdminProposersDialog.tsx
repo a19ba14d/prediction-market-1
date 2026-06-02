@@ -3,7 +3,8 @@
 import type { Address, Hash } from 'viem'
 import type { ProposerWhitelistCreatorOption, ProposerWhitelistMutationResponse, ProposerWhitelistStatus, ProposerWhitelistStatusResponse } from '@/lib/proposer-whitelist'
 import { useAppKitAccount } from '@reown/appkit/react'
-import { CheckCircle2Icon, Loader2Icon, PlusIcon, UserCheckIcon, XIcon } from 'lucide-react'
+import { CheckCircle2Icon, LightbulbIcon, Loader2Icon, PlusIcon, UserCheckIcon, XIcon } from 'lucide-react'
+import { useExtracted } from 'next-intl'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { getAddress, isAddress } from 'viem'
@@ -60,6 +61,7 @@ function readApiError(payload: unknown) {
 function mergeCreatorOptions(input: {
   creators: ProposerWhitelistCreatorOption[]
   connectedAddress: Address | null
+  connectedLabel: string
 }) {
   const byAddress = new Map<string, ProposerWhitelistCreatorOption>()
   for (const creator of input.creators) {
@@ -71,7 +73,7 @@ function mergeCreatorOptions(input: {
     const existing = byAddress.get(key)
     byAddress.set(key, {
       address: input.connectedAddress,
-      displayName: existing?.displayName ?? 'Connected EOA',
+      displayName: existing?.displayName ?? input.connectedLabel,
       shortAddress: shortenProposerWhitelistAddress(input.connectedAddress),
       hasServerSigner: Boolean(existing?.hasServerSigner),
     })
@@ -112,6 +114,7 @@ export default function AdminProposersDialog({
   initialCreatorAddress,
   onStatusChange,
 }: AdminProposersDialogProps) {
+  const t = useExtracted()
   const { address: connectedAddressRaw } = useAppKitAccount()
   const connectedAddress = useMemo(
     () => connectedAddressRaw && isAddress(connectedAddressRaw) ? getAddress(connectedAddressRaw) as Address : null,
@@ -129,8 +132,8 @@ export default function AdminProposersDialog({
   const [walletInput, setWalletInput] = useState('')
 
   const creatorOptions = useMemo(
-    () => mergeCreatorOptions({ creators, connectedAddress }),
-    [connectedAddress, creators],
+    () => mergeCreatorOptions({ creators, connectedAddress, connectedLabel: t('EOA wallet') }),
+    [connectedAddress, creators, t],
   )
   const selectedOption = creatorOptions.find(item => selectedCreator && item.address.toLowerCase() === selectedCreator.toLowerCase()) ?? null
   const canUseConnectedWallet = Boolean(
@@ -139,11 +142,31 @@ export default function AdminProposersDialog({
     && selectedCreator.toLowerCase() === connectedAddress.toLowerCase(),
   )
   const canUseServerSigner = Boolean(status?.hasServerSigner || selectedOption?.hasServerSigner)
-  const signerLabel = canUseConnectedWallet
-    ? 'Connected wallet'
-    : canUseServerSigner
-      ? 'Server signer'
-      : 'No signer'
+
+  function readDialogError(error: unknown) {
+    const message = readProposerWhitelistError(error)
+
+    if (message === 'Creator wallet needs POL for gas before updating proposer whitelist.') {
+      return t('Creator wallet needs POL for gas before updating proposer whitelist.')
+    }
+    if (message === 'Wallet signature was rejected.') {
+      return t('Wallet signature was rejected.')
+    }
+    if (message === 'Only the selected creator wallet can update this whitelist.') {
+      return t('Only the selected creator wallet can update this whitelist.')
+    }
+    if (message === 'Zero address is not allowed.') {
+      return t('Zero address is not allowed.')
+    }
+    if (message === 'Whitelist creator does not match the selected creator wallet.') {
+      return t('Whitelist creator does not match the selected creator wallet.')
+    }
+    if (message === 'Could not update proposer whitelist.') {
+      return t('Could not update proposer whitelist.')
+    }
+
+    return message
+  }
 
   const loadStatus = useCallback(async (creator: Address | null) => {
     setIsLoading(true)
@@ -156,7 +179,7 @@ export default function AdminProposersDialog({
       const payload = await response.json().catch(() => null) as unknown
       const apiError = readApiError(payload)
       if (!response.ok || apiError || !isProposerWhitelistStatusResponse(payload)) {
-        throw new Error(apiError || `Could not load proposer whitelist (${response.status})`)
+        throw new Error(apiError || t('Could not load proposer whitelist ({status})', { status: String(response.status) }))
       }
 
       const nextPayload: ProposerWhitelistStatusResponse = payload
@@ -176,12 +199,12 @@ export default function AdminProposersDialog({
     }
     catch (error) {
       console.error('Failed to load proposer whitelist', error)
-      toast.error(error instanceof Error ? error.message : 'Could not load proposer whitelist.')
+      toast.error(error instanceof Error ? error.message : t('Could not load proposer whitelist.'))
     }
     finally {
       setIsLoading(false)
     }
-  }, [connectedAddress, initialCreatorAddress, onStatusChange])
+  }, [connectedAddress, initialCreatorAddress, onStatusChange, t])
 
   /* eslint-disable react-you-might-not-need-an-effect/no-event-handler */
   useEffect(function loadOnOpen() {
@@ -200,7 +223,7 @@ export default function AdminProposersDialog({
 
   async function runServerMutation(action: 'create' | 'add' | 'remove', proposers: Address[]) {
     if (!selectedCreator) {
-      throw new Error('Select a creator wallet first.')
+      throw new Error(t('Select a creator wallet first.'))
     }
 
     const response = await fetch('/admin/api/proposer-whitelists', {
@@ -217,7 +240,7 @@ export default function AdminProposersDialog({
     const payload = await response.json().catch(() => null) as unknown
     const apiError = readApiError(payload)
     if (!response.ok || apiError || !isMutationResponse(payload)) {
-      throw new Error(apiError || `Could not update proposer whitelist (${response.status})`)
+      throw new Error(apiError || t('Could not update proposer whitelist ({status})', { status: String(response.status) }))
     }
     setStatus(payload.status)
     onStatusChange?.(payload.status)
@@ -231,27 +254,27 @@ export default function AdminProposersDialog({
     }
     const receipt = await client.waitForTransactionReceipt({ hash })
     if (receipt.status !== 'success') {
-      throw new Error(`Transaction failed: ${hash}`)
+      throw new Error(t('Transaction failed: {hash}', { hash }))
     }
     return receipt
   }
 
   function getConnectedWalletClient() {
     if (!selectedCreator) {
-      throw new Error('Select a creator wallet first.')
+      throw new Error(t('Select a creator wallet first.'))
     }
     if (!canUseConnectedWallet || !walletClient) {
-      throw new Error('Connect the selected creator wallet to sign this action.')
+      throw new Error(t('Use the selected creator EOA in your wallet to sign this action.'))
     }
     if (walletClient.chain?.id && walletClient.chain.id !== DEFAULT_CHAIN_ID) {
-      throw new Error(`Switch wallet to ${defaultViemNetwork.name} before updating proposer whitelist.`)
+      throw new Error(t('Switch wallet to {chain} before updating proposer whitelist.', { chain: defaultViemNetwork.name }))
     }
     return walletClient
   }
 
   async function runWalletCreate(proposers: Address[]) {
     if (!selectedCreator || !status) {
-      throw new Error('Select a creator wallet first.')
+      throw new Error(t('Select a creator wallet first.'))
     }
     const client = getConnectedWalletClient()
     const deployHash = await runWithSignaturePrompt(() => client.deployContract({
@@ -261,15 +284,15 @@ export default function AdminProposersDialog({
       bytecode: CREATOR_PROPOSER_WHITELIST_BYTECODE,
       args: [selectedCreator, proposers],
     }), {
-      title: 'Create whitelist',
-      description: 'Open your wallet and approve the whitelist deployment.',
+      title: t('Deploy proposer whitelist'),
+      description: t('Transaction 1 of 2: deploy the whitelist contract for this creator.'),
     })
     const deployReceipt = await waitForWalletTx(deployHash)
     const whitelistAddress = deployReceipt?.contractAddress && isAddress(deployReceipt.contractAddress)
       ? getAddress(deployReceipt.contractAddress) as Address
       : null
     if (!whitelistAddress) {
-      throw new Error('Whitelist deployment did not return a contract address.')
+      throw new Error(t('Whitelist deployment did not return a contract address.'))
     }
 
     const registerHash = await runWithSignaturePrompt(() => client.writeContract({
@@ -280,15 +303,15 @@ export default function AdminProposersDialog({
       functionName: 'registerWhitelist',
       args: [whitelistAddress],
     }), {
-      title: 'Register whitelist',
-      description: 'Open your wallet and approve the registry transaction.',
+      title: t('Register proposer whitelist'),
+      description: t('Transaction 2 of 2: register this whitelist in the registry.'),
     })
     await waitForWalletTx(registerHash)
   }
 
   async function runWalletUpdate(action: 'add' | 'remove', proposers: Address[]) {
     if (!selectedCreator || !status?.whitelistAddress) {
-      throw new Error('Creator whitelist is not registered yet.')
+      throw new Error(t('Creator whitelist is not registered yet.'))
     }
     const client = getConnectedWalletClient()
     const hash = await runWithSignaturePrompt(() => client.writeContract({
@@ -299,15 +322,15 @@ export default function AdminProposersDialog({
       functionName: action === 'add' ? 'addProposers' : 'removeProposers',
       args: [proposers],
     }), {
-      title: action === 'add' ? 'Add proposers' : 'Remove proposer',
-      description: 'Open your wallet and approve the whitelist update.',
+      title: action === 'add' ? t('Add proposers') : t('Remove proposer'),
+      description: t('Open your wallet and approve the whitelist update.'),
     })
     await waitForWalletTx(hash)
   }
 
   async function mutate(action: 'create' | 'add' | 'remove', rawProposers: string | string[]) {
     if (!selectedCreator) {
-      toast.error('Select a creator wallet first.')
+      toast.error(t('Select a creator wallet first.'))
       return
     }
 
@@ -316,12 +339,12 @@ export default function AdminProposersDialog({
       proposers = normalizeProposerAddressList(rawProposers)
     }
     catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Invalid wallet address.')
+      toast.error(error instanceof Error ? error.message : t('Invalid wallet address.'))
       return
     }
 
-    if (action !== 'create' && proposers.length === 0) {
-      toast.error('Add at least one wallet.')
+    if (proposers.length === 0) {
+      toast.error(t('Add at least one wallet.'))
       return
     }
 
@@ -340,11 +363,11 @@ export default function AdminProposersDialog({
       await loadStatus(selectedCreator)
       setWalletInput('')
       setAddOpen(false)
-      toast.success(action === 'remove' ? 'Proposer removed.' : 'Proposer whitelist updated.')
+      toast.success(action === 'remove' ? t('Proposer removed.') : t('Proposer whitelist updated.'))
     }
     catch (error) {
       console.error('Failed to update proposer whitelist', error)
-      toast.error(readProposerWhitelistError(error))
+      toast.error(readDialogError(error))
     }
     finally {
       setIsMutating(false)
@@ -362,7 +385,10 @@ export default function AdminProposersDialog({
   }
 
   const proposerRows = status?.proposers ?? []
-  const showAddYourWallet = Boolean(addOpen && proposerRows.length === 0 && connectedAddress && !walletInput.trim())
+  const connectedAddressAlreadyListed = Boolean(
+    connectedAddress && proposerRows.some(proposer => proposer.toLowerCase() === connectedAddress.toLowerCase()),
+  )
+  const showAddYourWallet = Boolean((!status?.whitelistAddress || addOpen) && connectedAddress && !connectedAddressAlreadyListed && !walletInput.trim())
   const actionDisabled = isLoading || isMutating || !selectedCreator || !status || (!canUseConnectedWallet && !canUseServerSigner)
 
   return (
@@ -371,23 +397,39 @@ export default function AdminProposersDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <UserCheckIcon className="size-5" />
-            Proposers
+            {t('Proposers')}
           </DialogTitle>
           <DialogDescription>
-            Adicione wallets confiáveis de usuários que poderão propor resultado dos mercados na UMA.
+            {t('Add trusted wallets that can propose market outcomes in UMA.')}
           </DialogDescription>
         </DialogHeader>
 
         <div className="grid gap-4">
           <div className="grid gap-2">
-            <Label>Creator wallet</Label>
+            <div className="flex items-center justify-between gap-3">
+              <Label>{t('Creator wallet')}</Label>
+              <div
+                className={cn(
+                  'inline-flex items-center gap-1.5 text-xs font-medium',
+                  status?.whitelistAddress ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground',
+                )}
+              >
+                <LightbulbIcon
+                  className={cn(
+                    'size-3.5',
+                    status?.whitelistAddress ? 'fill-emerald-500 text-emerald-500' : 'text-muted-foreground/70',
+                  )}
+                />
+                <span>{status?.whitelistAddress ? t('Whitelist registered') : t('Whitelist not registered')}</span>
+              </div>
+            </div>
             <Select
               value={selectedCreator ?? undefined}
               onValueChange={handleCreatorChange}
               disabled={isLoading || isMutating}
             >
               <SelectTrigger className="w-full">
-                <SelectValue placeholder={isLoading ? 'Loading creators...' : 'Select creator'} />
+                <SelectValue placeholder={isLoading ? t('Loading creators...') : t('Select creator')} />
               </SelectTrigger>
               <SelectContent>
                 {creatorOptions.map(creator => (
@@ -395,38 +437,17 @@ export default function AdminProposersDialog({
                     {creator.displayName}
                     {' · '}
                     {creator.shortAddress}
-                    {creator.hasServerSigner ? ' · server' : ''}
+                    {creator.hasServerSigner ? ` · ${t('server')}` : ''}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
 
-          <div className="rounded-md border px-3 py-2">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex min-w-0 items-center gap-2">
-                <span className={cn(
-                  'size-2.5 rounded-full',
-                  status?.whitelistAddress ? 'bg-emerald-500' : 'bg-muted-foreground/40',
-                )}
-                />
-                <span className="text-sm font-medium">
-                  {status?.whitelistAddress ? 'Whitelist registered' : 'Whitelist not registered'}
-                </span>
-              </div>
-              <span className="text-xs text-muted-foreground">{signerLabel}</span>
-            </div>
-            {status?.whitelistAddress && (
-              <p className="mt-1 font-mono text-xs break-all text-muted-foreground">
-                {status.whitelistAddress}
-              </p>
-            )}
-          </div>
-
           {status?.whitelistAddress && (
             <div className="grid gap-2">
               <div className="flex items-center justify-between gap-2">
-                <Label>Allowed proposers</Label>
+                <Label>{t('Allowed proposers')}</Label>
                 <Button
                   type="button"
                   variant="outline"
@@ -436,7 +457,7 @@ export default function AdminProposersDialog({
                   disabled={isMutating}
                 >
                   <PlusIcon className="size-3.5" />
-                  Add
+                  {t('Add')}
                 </Button>
               </div>
 
@@ -452,7 +473,7 @@ export default function AdminProposersDialog({
                       variant="ghost"
                       size="icon"
                       className="size-7 shrink-0 rounded-md"
-                      aria-label="Remove proposer"
+                      aria-label={t('Remove proposer')}
                       disabled={isMutating || actionDisabled}
                       onClick={() => void mutate('remove', [proposer])}
                     >
@@ -466,7 +487,7 @@ export default function AdminProposersDialog({
 
           {(!status?.whitelistAddress || addOpen) && (
             <div className="grid gap-2">
-              <Label>{status?.whitelistAddress ? 'Add proposer wallets' : 'Initial proposer wallets'}</Label>
+              <Label>{status?.whitelistAddress ? t('Add proposer wallets') : t('Initial proposer wallets')}</Label>
               <Textarea
                 value={walletInput}
                 onChange={event => setWalletInput(event.target.value)}
@@ -474,13 +495,23 @@ export default function AdminProposersDialog({
                 className="min-h-20"
                 disabled={isMutating}
               />
+              {!status?.whitelistAddress && (
+                <p className="text-xs text-muted-foreground">
+                  {t('The creator wallet is always included by the whitelist contract. Add only extra proposer wallets here.')}
+                </p>
+              )}
+              {!status?.whitelistAddress && canUseConnectedWallet && (
+                <p className="text-xs text-muted-foreground">
+                  {t('Creating a new whitelist requires two onchain transactions: deploy the whitelist, then register it.')}
+                </p>
+              )}
               {showAddYourWallet && (
                 <button
                   type="button"
                   className="w-fit text-xs font-medium text-primary hover:opacity-80"
                   onClick={() => setWalletInput(connectedAddress ?? '')}
                 >
-                  add your own wallet
+                  {t('add my own wallet')}
                 </button>
               )}
               <div className="flex justify-end">
@@ -494,7 +525,7 @@ export default function AdminProposersDialog({
                     : status?.whitelistAddress
                       ? <PlusIcon className="size-4" />
                       : <CheckCircle2Icon className="size-4" />}
-                  {status?.whitelistAddress ? 'Add proposers' : 'Create whitelist'}
+                  {status?.whitelistAddress ? t('Add proposers') : t('Create whitelist')}
                 </Button>
               </div>
             </div>
@@ -502,7 +533,7 @@ export default function AdminProposersDialog({
 
           {!canUseConnectedWallet && !canUseServerSigner && selectedCreator && (
             <p className="text-sm text-destructive">
-              Connect this creator wallet or configure its private key in prediction-market to update the whitelist.
+              {t('Use the selected creator EOA or configure its private key in prediction-market to update the whitelist.')}
             </p>
           )}
         </div>

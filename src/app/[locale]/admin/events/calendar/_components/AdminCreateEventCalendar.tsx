@@ -9,6 +9,7 @@ import listPlugin from '@fullcalendar/list'
 import FullCalendar from '@fullcalendar/react'
 import timeGridPlugin from '@fullcalendar/timegrid'
 import { CalendarPlusIcon, ClipboardListIcon, CopyIcon, ImageIcon, SquarePenIcon, Trash2Icon, UserCheckIcon } from 'lucide-react'
+import { useExtracted } from 'next-intl'
 import { useEffect, useReducer, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import EventIconImage from '@/components/EventIconImage'
@@ -325,6 +326,7 @@ function useCreateEventCalendarState() {
 }
 
 export default function AdminCreateEventCalendar() {
+  const t = useExtracted()
   const isMobile = useIsMobile()
   const {
     router,
@@ -786,7 +788,7 @@ export default function AdminCreateEventCalendar() {
             </Button>
             <Button type="button" variant="outline" className="justify-center" onClick={() => setProposersDialogOpen(true)}>
               <UserCheckIcon className="size-4" />
-              Proposers
+              {t('Proposers')}
             </Button>
           </div>
         </div>
