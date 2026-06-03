@@ -23,6 +23,7 @@ import type {
   PreparePayloadBody,
   PrepareResponse,
   PreSignCheckKey,
+  ProposerWhitelistCheckState,
   RecurringOccurrencePreview,
   SignatureExecutionTx,
   SignerOption,
@@ -38,6 +39,7 @@ import type {
 } from '@/lib/admin-sports-create'
 import type { EventCreationDraftRecord } from '@/lib/db/queries/event-creations'
 import type { EventCreationAssetPayload, EventCreationRecurrenceUnit } from '@/lib/event-creation'
+import type { ProposerWhitelistStatus } from '@/lib/proposer-whitelist'
 import { useAppKitAccount } from '@reown/appkit/react'
 import {
   ArrowLeftIcon,
@@ -56,7 +58,9 @@ import {
   SparkleIcon,
   SquarePenIcon,
   Trash2Icon,
+  UserCheckIcon,
 } from 'lucide-react'
+import { useExtracted } from 'next-intl'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { createPublicClient, formatUnits, getAddress, http, isAddress, keccak256, stringToHex } from 'viem'
@@ -73,14 +77,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import {
-  Drawer,
-  DrawerContent,
-  DrawerDescription,
-  DrawerFooter,
-  DrawerHeader,
-  DrawerTitle,
-} from '@/components/ui/drawer'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
@@ -95,7 +91,6 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 import { Textarea } from '@/components/ui/textarea'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { useIsMobile } from '@/hooks/useIsMobile'
 import { useSignaturePromptRunner } from '@/hooks/useSignaturePromptRunner'
 import { useRouter } from '@/i18n/navigation'
 import {
@@ -124,6 +119,9 @@ import {
   slugifyEventCreationTemplate as slugifyTemplate,
 } from '@/lib/event-creation'
 import { AMOY_CHAIN_ID } from '@/lib/network'
+import {
+  isProposerWhitelistStatusResponse,
+} from '@/lib/proposer-whitelist'
 import { cn } from '@/lib/utils'
 import { defaultViemNetwork, defaultViemRpcUrl } from '@/lib/viem-network'
 import { useUser } from '@/stores/useUser'
@@ -195,6 +193,7 @@ import {
   shortenAddress,
   shouldRetryFinalizeRequest,
 } from './admin-create-event-form-utils'
+import AdminProposersDialog from './AdminProposersDialog'
 
 function getCategorySlugKey(slug: string) {
   return slug.trim().toLowerCase()
@@ -259,6 +258,7 @@ function useAdminCreateEventForm({
   const { data: walletClient } = useWalletClient()
   const publicClient = usePublicClient()
   const { runWithSignaturePrompt } = useSignaturePromptRunner()
+  const t = useExtracted()
   const user = useUser()
   const normalizedInitialTitle = initialTitle.trim()
   const normalizedInitialSlug = initialSlug.trim()
@@ -322,6 +322,9 @@ function useAdminCreateEventForm({
   const [nativeGasCheckError, setNativeGasCheckError] = useState('')
   const [allowedCreatorCheckState, setAllowedCreatorCheckState] = useState<AllowedCreatorCheckState>('idle')
   const [allowedCreatorCheckError, setAllowedCreatorCheckError] = useState('')
+  const [proposerWhitelistCheckState, setProposerWhitelistCheckState] = useState<ProposerWhitelistCheckState>('idle')
+  const [proposerWhitelistCheckError, setProposerWhitelistCheckError] = useState('')
+  const [proposerWhitelistStatus, setProposerWhitelistStatus] = useState<ProposerWhitelistStatus | null>(null)
   const [openRouterCheckState, setOpenRouterCheckState] = useState<OpenRouterCheckState>('idle')
   const [openRouterCheckError, setOpenRouterCheckError] = useState('')
   const [contentCheckState, setContentCheckState] = useState<ContentCheckState>('idle')
@@ -332,6 +335,7 @@ function useAdminCreateEventForm({
   const [contentCheckError, setContentCheckError] = useState('')
   const [isAddingCreatorWallet, setIsAddingCreatorWallet] = useState(false)
   const [creatorWalletDialogOpen, setCreatorWalletDialogOpen] = useState(false)
+  const [proposersDialogOpen, setProposersDialogOpen] = useState(false)
   const [creatorWalletName, setCreatorWalletName] = useState('')
   const [isGeneratingRules, setIsGeneratingRules] = useState(false)
   const [isSigningAuth, setIsSigningAuth] = useState(false)
@@ -351,6 +355,7 @@ function useAdminCreateEventForm({
     funding: true,
     nativeGas: true,
     allowedCreator: true,
+    proposerWhitelist: true,
     slug: true,
     openRouter: true,
     content: true,
@@ -484,11 +489,16 @@ function useAdminCreateEventForm({
 
     return isKnownLeagueSlug ? normalizedLeagueSlug : undefined
   }, [isCustomLeagueSlug, isKnownLeagueSlug, normalizedLeagueSlug])
+  const selectedCreatorAddress = useMemo(() => {
+    const candidate = automaticWalletAddress.trim() || eoaAddress || ''
+    if (!candidate || !isAddress(candidate)) {
+      return null
+    }
+    return getAddress(candidate)
+  }, [automaticWalletAddress, eoaAddress])
   const slugWalletAddress = useMemo(
-    () => creationMode === 'recurring'
-      ? automaticWalletAddress.trim()
-      : (eoaAddress || ''),
-    [automaticWalletAddress, creationMode, eoaAddress],
+    () => selectedCreatorAddress ?? '',
+    [selectedCreatorAddress],
   )
   const creatorSlugTail = useMemo(
     () => buildEventCreationWalletTail(slugWalletAddress),
@@ -544,7 +554,7 @@ function useAdminCreateEventForm({
   const preSignChecksFingerprint = useMemo(() => JSON.stringify({
     eoaAddress: eoaAddress?.toLowerCase() ?? '',
     creationMode,
-    creator: automaticWalletAddress.trim().toLowerCase(),
+    creator: selectedCreatorAddress?.toLowerCase() ?? '',
     recurrenceUnit,
     recurrenceInterval,
     targetChainId,
@@ -576,13 +586,13 @@ function useAdminCreateEventForm({
       resolutionRules: form.resolutionRules.trim(),
     },
   }), [
-    automaticWalletAddress,
     creationMode,
     eoaAddress,
     form,
     marketCount,
     recurrenceInterval,
     recurrenceUnit,
+    selectedCreatorAddress,
     sportsDerivedContent.payload,
     targetChainId,
   ])
@@ -983,6 +993,9 @@ function useAdminCreateEventForm({
   const allowedCreatorHasIssue = allowedCreatorCheckState === 'missing'
     || allowedCreatorCheckState === 'no_wallet'
     || allowedCreatorCheckState === 'error'
+  const proposerWhitelistHasIssue = proposerWhitelistCheckState === 'missing'
+    || proposerWhitelistCheckState === 'no_wallet'
+    || proposerWhitelistCheckState === 'error'
   const slugHasIssue = slugValidationState === 'duplicate' || slugValidationState === 'error'
   const openRouterHasIssue = openRouterCheckState === 'error'
   const contentIndicatorState = useMemo<'checking' | 'ok' | 'error'>(() => {
@@ -1120,6 +1133,7 @@ function useAdminCreateEventForm({
       fundingCheckState,
       nativeGasCheckState,
       allowedCreatorCheckState,
+      proposerWhitelistCheckState,
       openRouterCheckState,
       contentCheckState,
       hasPendingAiErrors: pendingAiIssues.length > 0,
@@ -1143,6 +1157,7 @@ function useAdminCreateEventForm({
     contentCheckError,
     openRouterCheckState,
     pendingAiIssues.length,
+    proposerWhitelistCheckState,
     recurrenceUnit,
     recurringPreviewErrors,
     slugValidationState,
@@ -1339,6 +1354,8 @@ function useAdminCreateEventForm({
     nativeGasHasIssue,
     openRouterCheckState,
     openRouterHasIssue,
+    proposerWhitelistCheckState,
+    proposerWhitelistHasIssue,
     slugHasIssue,
     slugValidationState,
   }), [
@@ -1352,6 +1369,8 @@ function useAdminCreateEventForm({
     nativeGasHasIssue,
     openRouterCheckState,
     openRouterHasIssue,
+    proposerWhitelistCheckState,
+    proposerWhitelistHasIssue,
     slugHasIssue,
     slugValidationState,
   ])
@@ -1383,6 +1402,7 @@ function useAdminCreateEventForm({
       apply('funding', fundingHasIssue, fundingCheckState === 'ok')
       apply('nativeGas', nativeGasHasIssue, nativeGasCheckState === 'ok')
       apply('allowedCreator', allowedCreatorHasIssue, allowedCreatorCheckState === 'ok')
+      apply('proposerWhitelist', proposerWhitelistHasIssue, proposerWhitelistCheckState === 'ok')
       apply('slug', slugHasIssue, slugValidationState === 'unique')
       apply('openRouter', openRouterHasIssue, openRouterCheckState === 'ok')
       apply('content', contentHasIssue, contentIndicatorState === 'ok')
@@ -2770,7 +2790,7 @@ function useAdminCreateEventForm({
 
   const addCurrentWalletToAllowedCreators = useCallback(async () => {
     if (!eoaAddress) {
-      toast.error('Connect wallet first.')
+      toast.error(t('Select an EOA wallet first.'))
       return
     }
 
@@ -2813,7 +2833,43 @@ function useAdminCreateEventForm({
     finally {
       setIsAddingCreatorWallet(false)
     }
-  }, [creatorWalletName, eoaAddress, runAllowedCreatorCheck])
+  }, [creatorWalletName, eoaAddress, runAllowedCreatorCheck, t])
+
+  const runProposerWhitelistCheck = useCallback(async () => {
+    setProposerWhitelistCheckState('checking')
+    setProposerWhitelistCheckError('')
+
+    if (!selectedCreatorAddress) {
+      setProposerWhitelistStatus(null)
+      setProposerWhitelistCheckState('no_wallet')
+      return false
+    }
+
+    try {
+      const response = await fetchAdminApi(`/proposer-whitelists?creator=${encodeURIComponent(selectedCreatorAddress)}`, {
+        method: 'GET',
+        cache: 'no-store',
+      })
+      const payload = await response.json().catch(() => null) as unknown
+      const apiError = readApiError(payload)
+
+      if (!response.ok || apiError || !isProposerWhitelistStatusResponse(payload) || !payload.status) {
+        throw new Error(apiError || t('Proposer whitelist check failed ({status})', { status: String(response.status) }))
+      }
+
+      setProposerWhitelistStatus(payload.status)
+      const hasWhitelist = Boolean(payload.status.whitelistAddress)
+      setProposerWhitelistCheckState(hasWhitelist ? 'ok' : 'missing')
+      return hasWhitelist
+    }
+    catch (error) {
+      console.error('Error validating proposer whitelist:', error)
+      setProposerWhitelistStatus(null)
+      setProposerWhitelistCheckState('error')
+      setProposerWhitelistCheckError(t('Could not validate resolution proposers whitelist.'))
+      return false
+    }
+  }, [selectedCreatorAddress, t])
 
   const runFundingCheck = useCallback(async () => {
     setFundingCheckState('checking')
@@ -2945,10 +3001,11 @@ function useAdminCreateEventForm({
     }
 
     lastPreSignChecksCompletedRef.current = false
-    const [fundingOk, nativeGasOk, creatorOk, openRouterOk, slugOk] = await Promise.all([
+    const [fundingOk, nativeGasOk, creatorOk, proposerWhitelistOk, openRouterOk, slugOk] = await Promise.all([
       runFundingCheck(),
       runNativeGasCheck(),
       runAllowedCreatorCheck(),
+      runProposerWhitelistCheck(),
       runOpenRouterCheck(),
       runSlugCheck(),
     ])
@@ -2966,13 +3023,13 @@ function useAdminCreateEventForm({
       setContentCheckProgressLine('')
     }
 
-    const nextResult = fundingOk && nativeGasOk && creatorOk && openRouterOk && slugOk && contentOk
+    const nextResult = fundingOk && nativeGasOk && creatorOk && proposerWhitelistOk && openRouterOk && slugOk && contentOk
     lastPreSignChecksFingerprintRef.current = preSignChecksFingerprint
     lastPreSignChecksCompletedRef.current = true
     lastPreSignChecksResultRef.current = nextResult
 
     return nextResult
-  }, [preSignChecksFingerprint, runAllowedCreatorCheck, runContentCheck, runFundingCheck, runNativeGasCheck, runOpenRouterCheck, runSlugCheck])
+  }, [preSignChecksFingerprint, runAllowedCreatorCheck, runContentCheck, runFundingCheck, runNativeGasCheck, runOpenRouterCheck, runProposerWhitelistCheck, runSlugCheck])
 
   const getFeeOverridesForTx = useCallback(async (chainId: number) => {
     if (!publicClient) {
@@ -3974,6 +4031,7 @@ function useAdminCreateEventForm({
       fundingCheckState,
       nativeGasCheckState,
       allowedCreatorCheckState,
+      proposerWhitelistCheckState,
       openRouterCheckState,
       contentCheckState,
       hasPendingAiErrors: pendingAiIssues.length > 0,
@@ -4005,6 +4063,7 @@ function useAdminCreateEventForm({
     contentCheckError,
     openRouterCheckState,
     pendingAiIssues.length,
+    proposerWhitelistCheckState,
     recurrenceUnit,
     recurringPreviewErrors,
     showFirstError,
@@ -4053,6 +4112,9 @@ function useAdminCreateEventForm({
     setNativeGasCheckError('')
     setAllowedCreatorCheckState('idle')
     setAllowedCreatorCheckError('')
+    setProposerWhitelistCheckState('idle')
+    setProposerWhitelistCheckError('')
+    setProposerWhitelistStatus(null)
     setOpenRouterCheckState('idle')
     setOpenRouterCheckError('')
     setContentCheckState('idle')
@@ -4140,6 +4202,9 @@ function useAdminCreateEventForm({
     setNativeGasCheckError('')
     setAllowedCreatorCheckState('idle')
     setAllowedCreatorCheckError('')
+    setProposerWhitelistCheckState('idle')
+    setProposerWhitelistCheckError('')
+    setProposerWhitelistStatus(null)
     setOpenRouterCheckState('idle')
     setOpenRouterCheckError('')
     setContentCheckState('idle')
@@ -4350,6 +4415,7 @@ function useAdminCreateEventForm({
 
   const isStepFourPreSignChecksRunning = fundingCheckState === 'checking'
     || allowedCreatorCheckState === 'checking'
+    || proposerWhitelistCheckState === 'checking'
     || slugValidationState === 'checking'
     || openRouterCheckState === 'checking'
     || contentCheckState === 'checking'
@@ -4366,6 +4432,7 @@ function useAdminCreateEventForm({
     router,
     eoaAddress,
     eoaShortAddress,
+    selectedCreatorAddress,
     currentStep,
     maxVisitedStep,
     form,
@@ -4402,6 +4469,9 @@ function useAdminCreateEventForm({
     nativeGasCheckError,
     allowedCreatorCheckState,
     allowedCreatorCheckError,
+    proposerWhitelistCheckState,
+    proposerWhitelistCheckError,
+    proposerWhitelistStatus,
     openRouterCheckState,
     openRouterCheckError,
     contentCheckState,
@@ -4413,6 +4483,8 @@ function useAdminCreateEventForm({
     isAddingCreatorWallet,
     creatorWalletDialogOpen,
     setCreatorWalletDialogOpen,
+    proposersDialogOpen,
+    setProposersDialogOpen,
     creatorWalletName,
     setCreatorWalletName,
     isGeneratingRules,
@@ -4497,6 +4569,7 @@ function useAdminCreateEventForm({
     fundingHasIssue,
     nativeGasHasIssue,
     allowedCreatorHasIssue,
+    proposerWhitelistHasIssue,
     slugHasIssue,
     openRouterHasIssue,
     contentHasIssue,
@@ -4553,6 +4626,9 @@ function useAdminCreateEventForm({
     continueFromFinalPreview,
     generateRulesWithAi,
     addCurrentWalletToAllowedCreators,
+    runProposerWhitelistCheck,
+    setProposerWhitelistStatus,
+    setProposerWhitelistCheckState,
     isStepFourPreSignChecksRunning,
     stepFourNextButtonContent,
     creationMode,
@@ -4573,7 +4649,7 @@ export default function AdminCreateEventForm({
   serverDraftPayload = null,
   serverAssetPayload = null,
 }: AdminCreateEventFormProps) {
-  const isMobile = useIsMobile()
+  const t = useExtracted()
   const hook = useAdminCreateEventForm({
     sportsSlugCatalog,
     creationMode,
@@ -4592,6 +4668,7 @@ export default function AdminCreateEventForm({
     router,
     eoaAddress,
     eoaShortAddress,
+    selectedCreatorAddress,
     currentStep,
     maxVisitedStep,
     form,
@@ -4622,6 +4699,9 @@ export default function AdminCreateEventForm({
     nativeGasCheckError,
     allowedCreatorCheckState,
     allowedCreatorCheckError,
+    proposerWhitelistCheckState,
+    proposerWhitelistCheckError,
+    proposerWhitelistStatus,
     openRouterCheckState,
     openRouterCheckError,
     contentCheckState,
@@ -4631,6 +4711,8 @@ export default function AdminCreateEventForm({
     isAddingCreatorWallet,
     creatorWalletDialogOpen,
     setCreatorWalletDialogOpen,
+    proposersDialogOpen,
+    setProposersDialogOpen,
     creatorWalletName,
     setCreatorWalletName,
     isGeneratingRules,
@@ -4702,6 +4784,7 @@ export default function AdminCreateEventForm({
     fundingHasIssue,
     nativeGasHasIssue,
     allowedCreatorHasIssue,
+    proposerWhitelistHasIssue,
     slugHasIssue,
     openRouterHasIssue,
     contentHasIssue,
@@ -4753,224 +4836,11 @@ export default function AdminCreateEventForm({
     continueFromFinalPreview,
     generateRulesWithAi,
     addCurrentWalletToAllowedCreators,
+    runProposerWhitelistCheck,
+    setProposerWhitelistStatus,
+    setProposerWhitelistCheckState,
     stepFourNextButtonContent,
   } = hook
-
-  function handleCreatorWalletDialogOpenChange(nextOpen: boolean) {
-    if (!isAddingCreatorWallet) {
-      setCreatorWalletDialogOpen(nextOpen)
-      if (!nextOpen) {
-        setCreatorWalletName('')
-      }
-    }
-  }
-
-  function closeCreatorWalletDialog() {
-    setCreatorWalletDialogOpen(false)
-    setCreatorWalletName('')
-  }
-
-  function renderFinalPreviewBody() {
-    return (
-      <div className="flex max-h-[90vh] flex-col">
-        <div className="border-b px-6 py-3">
-          <div className={cn(`
-            mx-auto w-full max-w-2xl rounded-md border bg-muted/20 px-3 py-2 text-center font-mono text-xs
-            text-muted-foreground
-          `)}
-          >
-            {previewEventUrl}
-          </div>
-        </div>
-
-        <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[minmax(0,1fr)_20rem]">
-          <div className="min-h-0 space-y-4 overflow-y-auto p-6">
-            <div className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-4 rounded-md border p-4">
-              <div className="relative size-22 overflow-hidden rounded-md border bg-muted">
-                {eventImagePreviewUrl
-                  ? (
-                      <EventIconImage
-                        src={eventImagePreviewUrl}
-                        alt="Event preview"
-                        sizes="88px"
-                        containerClassName="size-full"
-                      />
-                    )
-                  : (
-                      <Skeleton className="size-full rounded-none" />
-                    )}
-              </div>
-              <div className="min-w-0 space-y-1">
-                <p className="text-lg font-semibold text-foreground">{previewTitle}</p>
-                <p className="text-xs text-muted-foreground">{previewEndDate}</p>
-              </div>
-            </div>
-
-            {isMultiMarketPreview && previewMarkets.length > 0 && (
-              <div className="space-y-3 rounded-md border p-4">
-                <p className="text-sm font-semibold text-foreground">Outcomes</p>
-                <div className="space-y-3">
-                  {previewMarkets.map((market, index) => (
-                    <div key={market.key} className="rounded-md border bg-muted/20 p-3">
-                      <div className="flex items-center gap-3">
-                        {market.imageUrl && (
-                          <div className="relative size-12 shrink-0 overflow-hidden rounded-md border bg-muted">
-                            <EventIconImage
-                              src={market.imageUrl}
-                              alt={`Market ${index + 1} preview`}
-                              sizes="48px"
-                              containerClassName="size-full"
-                            />
-                          </div>
-                        )}
-                        <div className="min-w-0 flex-1 space-y-1">
-                          <p className="text-sm font-semibold text-foreground">
-                            {market.title || `Market ${index + 1}`}
-                          </p>
-                          <p className="text-xs text-muted-foreground">{market.question || 'Question pending'}</p>
-                        </div>
-                        <div className="hidden shrink-0 items-center gap-1.5 sm:flex">
-                          <span className={cn(`
-                            rounded-md border border-emerald-500/40 bg-emerald-500/15 px-2.5 py-1.5 text-sm
-                            font-semibold text-emerald-600
-                          `)}
-                          >
-                            {market.outcomeYes}
-                          </span>
-                          <span className={cn(`
-                            rounded-md border border-red-500/40 bg-red-500/15 px-2.5 py-1.5 text-sm font-semibold
-                            text-red-500
-                          `)}
-                          >
-                            {market.outcomeNo}
-                          </span>
-                        </div>
-                      </div>
-                      <div className="mt-2 flex items-center gap-1.5 sm:hidden">
-                        <span className={cn(`
-                          rounded-md border border-emerald-500/40 bg-emerald-500/15 px-2.5 py-1.5 text-sm font-semibold
-                          text-emerald-600
-                        `)}
-                        >
-                          {market.outcomeYes}
-                        </span>
-                        <span className={cn(`
-                          rounded-md border border-red-500/40 bg-red-500/15 px-2.5 py-1.5 text-sm font-semibold
-                          text-red-500
-                        `)}
-                        >
-                          {market.outcomeNo}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <div className="space-y-3 rounded-md border p-4">
-              <p className="text-sm font-semibold text-foreground">Resolution rules</p>
-              <p className="text-sm whitespace-pre-wrap text-muted-foreground">
-                {effectiveResolutionRules || 'Rules not set.'}
-              </p>
-              {form.resolutionSource
-                ? (
-                    <a
-                      href={form.resolutionSource}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
-                    >
-                      {form.resolutionSource}
-                      <ExternalLinkIcon className="size-3" />
-                    </a>
-                  )
-                : (
-                    <p className="text-xs text-muted-foreground">No resolution source URL.</p>
-                  )}
-            </div>
-          </div>
-
-          <div className="border-t bg-muted/10 p-6 lg:border-t-0 lg:border-l">
-            <p className="text-sm font-semibold text-foreground">Trade panel preview</p>
-            <div className="mt-3 space-y-3 rounded-md border bg-background p-4">
-              <div className="flex items-center gap-4 text-sm font-semibold">
-                <span className="text-muted-foreground">Buy</span>
-                <span className="text-muted-foreground">Sell</span>
-              </div>
-              <div className="h-px w-full bg-border" />
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  disabled
-                  className={cn(`
-                    rounded-md border border-emerald-500/40 bg-emerald-500/15 px-3 py-2 text-sm font-semibold
-                    text-emerald-600
-                  `)}
-                >
-                  {tradePreviewMarket?.outcomeYes || 'Yes'}
-                </button>
-                <button
-                  type="button"
-                  disabled
-                  className={cn(`
-                    rounded-md border border-red-500/40 bg-red-500/15 px-3 py-2 text-sm font-semibold text-red-500
-                  `)}
-                >
-                  {tradePreviewMarket?.outcomeNo || 'No'}
-                </button>
-              </div>
-              <div className="space-y-2">
-                <Skeleton className="h-3 w-24" />
-                <Skeleton className="h-10 w-full" />
-                <Skeleton className="h-3 w-32" />
-                <Skeleton className="h-9 w-full" />
-              </div>
-            </div>
-
-            <div className="mt-4 space-y-2">
-              <p className="text-xs font-semibold text-muted-foreground uppercase">Categories</p>
-              {selectedCategoryChips.length > 0
-                ? (
-                    <div className={cn(`
-                      flex scrollbar-none gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none]
-                      [&::-webkit-scrollbar]:hidden
-                    `)}
-                    >
-                      {selectedCategoryChips.map(item => (
-                        <span
-                          key={item.slug}
-                          className={cn(`
-                            shrink-0 rounded-full border bg-background px-2.5 py-1 text-xs text-muted-foreground
-                          `)}
-                        >
-                          {item.label}
-                        </span>
-                      ))}
-                    </div>
-                  )
-                : (
-                    <p className="text-xs text-muted-foreground">No categories selected.</p>
-                  )}
-            </div>
-          </div>
-        </div>
-
-        <div className="flex flex-col-reverse gap-2 border-t p-4 sm:flex-row sm:justify-end">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => setFinalPreviewDialogOpen(false)}
-          >
-            Back to edit
-          </Button>
-          <Button type="button" onClick={continueFromFinalPreview}>
-            Continue to sign
-          </Button>
-        </div>
-      </div>
-    )
-  }
 
   return (
     <form
@@ -6460,299 +6330,365 @@ export default function AdminCreateEventForm({
         </Card>
       )}
 
-      {isMobile
-        ? (
-            <Drawer open={creatorWalletDialogOpen} onOpenChange={handleCreatorWalletDialogOpenChange}>
-              <DrawerContent className="max-h-[90vh] w-full bg-background px-4 pt-4 pb-6">
-                <DrawerHeader className="space-y-2 p-0 text-left">
-                  <DrawerTitle>Name this wallet</DrawerTitle>
-                  <DrawerDescription>
-                    Add a display name so this wallet can be recognized in mirrored market sources.
-                  </DrawerDescription>
-                </DrawerHeader>
-                <div className="grid gap-2 py-4">
-                  <Label htmlFor="creator-wallet-name">Wallet name</Label>
-                  <Input
-                    id="creator-wallet-name"
-                    value={creatorWalletName}
-                    onChange={event => setCreatorWalletName(event.target.value)}
-                    maxLength={80}
-                    placeholder="My creator wallet"
-                    disabled={isAddingCreatorWallet}
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    {eoaAddress ?? 'Wallet not connected'}
-                  </p>
-                </div>
-                <DrawerFooter className="p-0">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={closeCreatorWalletDialog}
-                    disabled={isAddingCreatorWallet}
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    type="button"
-                    onClick={() => void addCurrentWalletToAllowedCreators()}
-                    disabled={isAddingCreatorWallet || !creatorWalletName.trim() || !eoaAddress}
-                  >
-                    {isAddingCreatorWallet && <Loader2Icon className="mr-2 size-4 animate-spin" />}
-                    Add wallet
-                  </Button>
-                </DrawerFooter>
-              </DrawerContent>
-            </Drawer>
-          )
-        : (
-            <Dialog open={creatorWalletDialogOpen} onOpenChange={handleCreatorWalletDialogOpenChange}>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Name this wallet</DialogTitle>
-                  <DialogDescription>
-                    Add a display name so this wallet can be recognized in mirrored market sources.
-                  </DialogDescription>
-                </DialogHeader>
-                <div className="grid gap-2">
-                  <Label htmlFor="creator-wallet-name">Wallet name</Label>
-                  <Input
-                    id="creator-wallet-name"
-                    value={creatorWalletName}
-                    onChange={event => setCreatorWalletName(event.target.value)}
-                    maxLength={80}
-                    placeholder="My creator wallet"
-                    disabled={isAddingCreatorWallet}
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    {eoaAddress ?? 'Wallet not connected'}
-                  </p>
-                </div>
-                <DialogFooter>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={closeCreatorWalletDialog}
-                    disabled={isAddingCreatorWallet}
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    type="button"
-                    onClick={() => void addCurrentWalletToAllowedCreators()}
-                    disabled={isAddingCreatorWallet || !creatorWalletName.trim() || !eoaAddress}
-                  >
-                    {isAddingCreatorWallet && <Loader2Icon className="mr-2 size-4 animate-spin" />}
-                    Add wallet
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
-          )}
+      <Dialog
+        open={creatorWalletDialogOpen}
+        onOpenChange={(nextOpen) => {
+          if (!isAddingCreatorWallet) {
+            setCreatorWalletDialogOpen(nextOpen)
+            if (!nextOpen) {
+              setCreatorWalletName('')
+            }
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Name this wallet</DialogTitle>
+            <DialogDescription>
+              Add a display name so this wallet can be recognized in mirrored market sources.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-2">
+            <Label htmlFor="creator-wallet-name">Wallet name</Label>
+            <Input
+              id="creator-wallet-name"
+              value={creatorWalletName}
+              onChange={event => setCreatorWalletName(event.target.value)}
+              maxLength={80}
+              placeholder="My creator wallet"
+              disabled={isAddingCreatorWallet}
+            />
+            <p className="text-xs text-muted-foreground">
+              {eoaAddress ?? 'Wallet not connected'}
+            </p>
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setCreatorWalletDialogOpen(false)
+                setCreatorWalletName('')
+              }}
+              disabled={isAddingCreatorWallet}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={() => void addCurrentWalletToAllowedCreators()}
+              disabled={isAddingCreatorWallet || !creatorWalletName.trim() || !eoaAddress}
+            >
+              {isAddingCreatorWallet && <Loader2Icon className="mr-2 size-4 animate-spin" />}
+              Add wallet
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-      {isMobile
-        ? (
-            <Drawer open={recurringRequiresServerWalletSetup} onOpenChange={() => {}}>
-              <DrawerContent
-                className="max-h-[90vh] w-full bg-background px-4 pt-4 pb-6"
-                onEscapeKeyDown={event => event.preventDefault()}
-                onInteractOutside={event => event.preventDefault()}
+      <AdminProposersDialog
+        open={proposersDialogOpen}
+        onOpenChange={setProposersDialogOpen}
+        initialCreatorAddress={selectedCreatorAddress}
+        lockCreatorSelection
+        onStatusChange={(nextStatus) => {
+          if (!selectedCreatorAddress || nextStatus.creator.toLowerCase() !== selectedCreatorAddress.toLowerCase()) {
+            return
+          }
+          setProposerWhitelistStatus(nextStatus)
+          setProposerWhitelistCheckState(nextStatus.whitelistAddress ? 'ok' : 'missing')
+        }}
+      />
+
+      <Dialog open={recurringRequiresServerWalletSetup} onOpenChange={() => {}}>
+        <DialogContent
+          showCloseButton={false}
+          onEscapeKeyDown={event => event.preventDefault()}
+          onInteractOutside={event => event.preventDefault()}
+        >
+          <DialogHeader>
+            <DialogTitle>Server Wallet Required</DialogTitle>
+            <DialogDescription>
+              Recurring events require adding the creator wallet private key to
+              {' '}
+              <code>EVENT_CREATION_SIGNER_PRIVATE_KEYS</code>
+              {' '}
+              in Vercel Environment Variables or your project&apos;s
+              {' '}
+              <code>.env</code>
+              {' '}
+              before you can create or edit recurring drafts.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button type="button" variant="outline" asChild>
+              <AppLink href="/admin/events/calendar">
+                <ArrowLeftIcon className="size-4" />
+                Back to calendar
+              </AppLink>
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={rulesGeneratorDialogOpen} onOpenChange={setRulesGeneratorDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Generate rules with AI</DialogTitle>
+            <DialogDescription>
+              Experimental output generated by your configured AI provider.
+              We recommend paid models (for example xAI or Manus with internet access) for better quality.
+              Validate all text manually, including dates and links. You are responsible for the final rules.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setRulesGeneratorDialogOpen(false)}
+              disabled={isGeneratingRules}
+            >
+              Cancel
+            </Button>
+            <Button type="button" onClick={() => void generateRulesWithAi()} disabled={isGeneratingRules}>
+              {isGeneratingRules && <Loader2Icon className="mr-2 size-4 animate-spin" />}
+              Generate
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={resetFormDialogOpen} onOpenChange={setResetFormDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Clear form?</DialogTitle>
+            <DialogDescription>
+              This will remove all filled fields, uploaded images, and pre-sign checks from the wizard.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setResetFormDialogOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button type="button" variant="destructive" onClick={confirmResetForm}>
+              Clear form
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={finalPreviewDialogOpen} onOpenChange={setFinalPreviewDialogOpen}>
+        <DialogContent className="max-h-[90vh] overflow-hidden p-0 sm:max-w-6xl">
+          <DialogHeader className="sr-only">
+            <DialogTitle>Event preview</DialogTitle>
+            <DialogDescription>
+              Review how your event and markets will look before starting signatures.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex max-h-[90vh] flex-col">
+            <div className="border-b px-6 py-3">
+              <div className={cn(`
+                mx-auto w-full max-w-2xl rounded-md border bg-muted/20 px-3 py-2 text-center font-mono text-xs
+                text-muted-foreground
+              `)}
               >
-                <DrawerHeader className="space-y-2 p-0 text-left">
-                  <DrawerTitle>Server Wallet Required</DrawerTitle>
-                  <DrawerDescription>
-                    Recurring events require adding the creator wallet private key to
-                    {' '}
-                    <code>EVENT_CREATION_SIGNER_PRIVATE_KEYS</code>
-                    {' '}
-                    in Vercel Environment Variables or your project&apos;s
-                    {' '}
-                    <code>.env</code>
-                    {' '}
-                    before you can create or edit recurring drafts.
-                  </DrawerDescription>
-                </DrawerHeader>
-                <DrawerFooter className="mt-4 p-0">
-                  <Button type="button" variant="outline" asChild>
-                    <AppLink href="/admin/events/calendar">
-                      <ArrowLeftIcon className="size-4" />
-                      Back to calendar
-                    </AppLink>
-                  </Button>
-                </DrawerFooter>
-              </DrawerContent>
-            </Drawer>
-          )
-        : (
-            <Dialog open={recurringRequiresServerWalletSetup} onOpenChange={() => {}}>
-              <DialogContent
-                showCloseButton={false}
-                onEscapeKeyDown={event => event.preventDefault()}
-                onInteractOutside={event => event.preventDefault()}
+                {previewEventUrl}
+              </div>
+            </div>
+
+            <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[minmax(0,1fr)_20rem]">
+              <div className="min-h-0 space-y-4 overflow-y-auto p-6">
+                <div className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-4 rounded-md border p-4">
+                  <div className="relative size-22 overflow-hidden rounded-md border bg-muted">
+                    {eventImagePreviewUrl
+                      ? (
+                          <EventIconImage
+                            src={eventImagePreviewUrl}
+                            alt="Event preview"
+                            sizes="88px"
+                            containerClassName="size-full"
+                          />
+                        )
+                      : (
+                          <Skeleton className="size-full rounded-none" />
+                        )}
+                  </div>
+                  <div className="min-w-0 space-y-1">
+                    <p className="text-lg font-semibold text-foreground">{previewTitle}</p>
+                    <p className="text-xs text-muted-foreground">{previewEndDate}</p>
+                  </div>
+                </div>
+
+                {isMultiMarketPreview && previewMarkets.length > 0 && (
+                  <div className="space-y-3 rounded-md border p-4">
+                    <p className="text-sm font-semibold text-foreground">Outcomes</p>
+                    <div className="space-y-3">
+                      {previewMarkets.map((market, index) => (
+                        <div key={market.key} className="rounded-md border bg-muted/20 p-3">
+                          <div className="flex items-center gap-3">
+                            {market.imageUrl && (
+                              <div className="relative size-12 shrink-0 overflow-hidden rounded-md border bg-muted">
+                                <EventIconImage
+                                  src={market.imageUrl}
+                                  alt={`Market ${index + 1} preview`}
+                                  sizes="48px"
+                                  containerClassName="size-full"
+                                />
+                              </div>
+                            )}
+                            <div className="min-w-0 flex-1 space-y-1">
+                              <p className="text-sm font-semibold text-foreground">
+                                {market.title || `Market ${index + 1}`}
+                              </p>
+                              <p className="text-xs text-muted-foreground">{market.question || 'Question pending'}</p>
+                            </div>
+                            <div className="hidden shrink-0 items-center gap-1.5 sm:flex">
+                              <span className={cn(`
+                                rounded-md border border-emerald-500/40 bg-emerald-500/15 px-2.5 py-1.5 text-sm
+                                font-semibold text-emerald-600
+                              `)}
+                              >
+                                {market.outcomeYes}
+                              </span>
+                              <span className={cn(`
+                                rounded-md border border-red-500/40 bg-red-500/15 px-2.5 py-1.5 text-sm font-semibold
+                                text-red-500
+                              `)}
+                              >
+                                {market.outcomeNo}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="mt-2 flex items-center gap-1.5 sm:hidden">
+                            <span className={cn(`
+                              rounded-md border border-emerald-500/40 bg-emerald-500/15 px-2.5 py-1.5 text-sm
+                              font-semibold text-emerald-600
+                            `)}
+                            >
+                              {market.outcomeYes}
+                            </span>
+                            <span className={cn(`
+                              rounded-md border border-red-500/40 bg-red-500/15 px-2.5 py-1.5 text-sm font-semibold
+                              text-red-500
+                            `)}
+                            >
+                              {market.outcomeNo}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="space-y-3 rounded-md border p-4">
+                  <p className="text-sm font-semibold text-foreground">Resolution rules</p>
+                  <p className="text-sm whitespace-pre-wrap text-muted-foreground">
+                    {effectiveResolutionRules || 'Rules not set.'}
+                  </p>
+                  {form.resolutionSource
+                    ? (
+                        <a
+                          href={form.resolutionSource}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                        >
+                          {form.resolutionSource}
+                          <ExternalLinkIcon className="size-3" />
+                        </a>
+                      )
+                    : (
+                        <p className="text-xs text-muted-foreground">No resolution source URL.</p>
+                      )}
+                </div>
+              </div>
+
+              <div className="border-t bg-muted/10 p-6 lg:border-t-0 lg:border-l">
+                <p className="text-sm font-semibold text-foreground">Trade panel preview</p>
+                <div className="mt-3 space-y-3 rounded-md border bg-background p-4">
+                  <div className="flex items-center gap-4 text-sm font-semibold">
+                    <span className="text-muted-foreground">Buy</span>
+                    <span className="text-muted-foreground">Sell</span>
+                  </div>
+                  <div className="h-px w-full bg-border" />
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      disabled
+                      className={cn(`
+                        rounded-md border border-emerald-500/40 bg-emerald-500/15 px-3 py-2 text-sm font-semibold
+                        text-emerald-600
+                      `)}
+                    >
+                      {tradePreviewMarket?.outcomeYes || 'Yes'}
+                    </button>
+                    <button
+                      type="button"
+                      disabled
+                      className={cn(`
+                        rounded-md border border-red-500/40 bg-red-500/15 px-3 py-2 text-sm font-semibold text-red-500
+                      `)}
+                    >
+                      {tradePreviewMarket?.outcomeNo || 'No'}
+                    </button>
+                  </div>
+                  <div className="space-y-2">
+                    <Skeleton className="h-3 w-24" />
+                    <Skeleton className="h-10 w-full" />
+                    <Skeleton className="h-3 w-32" />
+                    <Skeleton className="h-9 w-full" />
+                  </div>
+                </div>
+
+                <div className="mt-4 space-y-2">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase">Categories</p>
+                  {selectedCategoryChips.length > 0
+                    ? (
+                        <div className={cn(`
+                          flex scrollbar-none gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none]
+                          [&::-webkit-scrollbar]:hidden
+                        `)}
+                        >
+                          {selectedCategoryChips.map(item => (
+                            <span
+                              key={item.slug}
+                              className={cn(`
+                                shrink-0 rounded-full border bg-background px-2.5 py-1 text-xs text-muted-foreground
+                              `)}
+                            >
+                              {item.label}
+                            </span>
+                          ))}
+                        </div>
+                      )
+                    : (
+                        <p className="text-xs text-muted-foreground">No categories selected.</p>
+                      )}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-col-reverse gap-2 border-t p-4 sm:flex-row sm:justify-end">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setFinalPreviewDialogOpen(false)}
               >
-                <DialogHeader>
-                  <DialogTitle>Server Wallet Required</DialogTitle>
-                  <DialogDescription>
-                    Recurring events require adding the creator wallet private key to
-                    {' '}
-                    <code>EVENT_CREATION_SIGNER_PRIVATE_KEYS</code>
-                    {' '}
-                    in Vercel Environment Variables or your project&apos;s
-                    {' '}
-                    <code>.env</code>
-                    {' '}
-                    before you can create or edit recurring drafts.
-                  </DialogDescription>
-                </DialogHeader>
-                <DialogFooter>
-                  <Button type="button" variant="outline" asChild>
-                    <AppLink href="/admin/events/calendar">
-                      <ArrowLeftIcon className="size-4" />
-                      Back to calendar
-                    </AppLink>
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
-          )}
-
-      {isMobile
-        ? (
-            <Drawer open={rulesGeneratorDialogOpen} onOpenChange={setRulesGeneratorDialogOpen}>
-              <DrawerContent className="max-h-[90vh] w-full bg-background px-4 pt-4 pb-6">
-                <DrawerHeader className="space-y-2 p-0 text-left">
-                  <DrawerTitle>Generate rules with AI</DrawerTitle>
-                  <DrawerDescription>
-                    Experimental output generated by your configured AI provider.
-                    We recommend paid models (for example xAI or Manus with internet access) for better quality.
-                    Validate all text manually, including dates and links. You are responsible for the final rules.
-                  </DrawerDescription>
-                </DrawerHeader>
-                <DrawerFooter className="mt-4 p-0">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => setRulesGeneratorDialogOpen(false)}
-                    disabled={isGeneratingRules}
-                  >
-                    Cancel
-                  </Button>
-                  <Button type="button" onClick={() => void generateRulesWithAi()} disabled={isGeneratingRules}>
-                    {isGeneratingRules && <Loader2Icon className="mr-2 size-4 animate-spin" />}
-                    Generate
-                  </Button>
-                </DrawerFooter>
-              </DrawerContent>
-            </Drawer>
-          )
-        : (
-            <Dialog open={rulesGeneratorDialogOpen} onOpenChange={setRulesGeneratorDialogOpen}>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Generate rules with AI</DialogTitle>
-                  <DialogDescription>
-                    Experimental output generated by your configured AI provider.
-                    We recommend paid models (for example xAI or Manus with internet access) for better quality.
-                    Validate all text manually, including dates and links. You are responsible for the final rules.
-                  </DialogDescription>
-                </DialogHeader>
-                <DialogFooter>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => setRulesGeneratorDialogOpen(false)}
-                    disabled={isGeneratingRules}
-                  >
-                    Cancel
-                  </Button>
-                  <Button type="button" onClick={() => void generateRulesWithAi()} disabled={isGeneratingRules}>
-                    {isGeneratingRules && <Loader2Icon className="mr-2 size-4 animate-spin" />}
-                    Generate
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
-          )}
-
-      {isMobile
-        ? (
-            <Drawer open={resetFormDialogOpen} onOpenChange={setResetFormDialogOpen}>
-              <DrawerContent className="max-h-[90vh] w-full bg-background px-4 pt-4 pb-6">
-                <DrawerHeader className="space-y-2 p-0 text-left">
-                  <DrawerTitle>Clear form?</DrawerTitle>
-                  <DrawerDescription>
-                    This will remove all filled fields, uploaded images, and pre-sign checks from the wizard.
-                  </DrawerDescription>
-                </DrawerHeader>
-                <DrawerFooter className="mt-4 p-0">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => setResetFormDialogOpen(false)}
-                  >
-                    Cancel
-                  </Button>
-                  <Button type="button" variant="destructive" onClick={confirmResetForm}>
-                    Clear form
-                  </Button>
-                </DrawerFooter>
-              </DrawerContent>
-            </Drawer>
-          )
-        : (
-            <Dialog open={resetFormDialogOpen} onOpenChange={setResetFormDialogOpen}>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Clear form?</DialogTitle>
-                  <DialogDescription>
-                    This will remove all filled fields, uploaded images, and pre-sign checks from the wizard.
-                  </DialogDescription>
-                </DialogHeader>
-                <DialogFooter>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => setResetFormDialogOpen(false)}
-                  >
-                    Cancel
-                  </Button>
-                  <Button type="button" variant="destructive" onClick={confirmResetForm}>
-                    Clear form
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
-          )}
-
-      {isMobile
-        ? (
-            <Drawer open={finalPreviewDialogOpen} onOpenChange={setFinalPreviewDialogOpen}>
-              <DrawerContent className="max-h-[92vh] w-full overflow-hidden bg-background p-0">
-                <DrawerHeader className="sr-only">
-                  <DrawerTitle>Event preview</DrawerTitle>
-                  <DrawerDescription>
-                    Review how your event and markets will look before starting signatures.
-                  </DrawerDescription>
-                </DrawerHeader>
-
-                {renderFinalPreviewBody()}
-              </DrawerContent>
-            </Drawer>
-          )
-        : (
-            <Dialog open={finalPreviewDialogOpen} onOpenChange={setFinalPreviewDialogOpen}>
-              <DialogContent className="max-h-[90vh] overflow-hidden p-0 sm:max-w-6xl">
-                <DialogHeader className="sr-only">
-                  <DialogTitle>Event preview</DialogTitle>
-                  <DialogDescription>
-                    Review how your event and markets will look before starting signatures.
-                  </DialogDescription>
-                </DialogHeader>
-
-                {renderFinalPreviewBody()}
-              </DialogContent>
-            </Dialog>
-          )}
+                Back to edit
+              </Button>
+              <Button type="button" onClick={continueFromFinalPreview}>
+                Continue to sign
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {currentStep === 4 && (
         <Card className="bg-background">
@@ -6983,6 +6919,86 @@ export default function AdminCreateEventForm({
                 </Button>
               )}
               {allowedCreatorCheckError && <p className="mt-2 text-sm text-destructive">{allowedCreatorCheckError}</p>}
+            </div>
+
+            <div className="rounded-md border px-4 py-3">
+              <div className="flex items-center justify-between gap-3">
+                <button
+                  type="button"
+                  onClick={() => togglePreSignCheck('proposerWhitelist', proposerWhitelistHasIssue)}
+                  disabled={proposerWhitelistHasIssue}
+                  className={cn(
+                    'flex items-center gap-2 text-left',
+                    proposerWhitelistHasIssue ? 'cursor-default' : 'cursor-pointer',
+                  )}
+                >
+                  {expandedPreSignChecks.proposerWhitelist
+                    ? <ChevronDownIcon className="size-5 text-muted-foreground" />
+                    : (
+                        <ChevronRightIcon className="size-5 text-muted-foreground" />
+                      )}
+                  <p className="text-xl font-semibold text-foreground">{t('Resolution proposers whitelist')}</p>
+                </button>
+                <CheckIndicator
+                  state={
+                    proposerWhitelistCheckState === 'ok'
+                      ? 'ok'
+                      : (proposerWhitelistCheckState === 'checking' || proposerWhitelistCheckState === 'idle')
+                          ? 'checking'
+                          : 'error'
+                  }
+                />
+              </div>
+              {expandedPreSignChecks.proposerWhitelist && (
+                <div className="mt-2 space-y-2">
+                  <div className="flex items-center gap-1.5">
+                    <p className="text-sm text-muted-foreground">
+                      {proposerWhitelistStatus?.whitelistAddress ? t('Whitelist registered') : t('Whitelist not registered')}
+                    </p>
+                    {proposerWhitelistStatus?.whitelistAddress && (
+                      <UserCheckIcon className="size-4 shrink-0 text-emerald-500" />
+                    )}
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    {proposerWhitelistCheckState === 'missing' && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-7"
+                        onClick={() => setProposersDialogOpen(true)}
+                        disabled={!selectedCreatorAddress}
+                      >
+                        {t('Create whitelist')}
+                      </Button>
+                    )}
+                    {proposerWhitelistCheckState === 'ok' && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-7"
+                        onClick={() => setProposersDialogOpen(true)}
+                      >
+                        <UserCheckIcon className="mr-2 size-3.5" />
+                        {t('Manage proposers')}
+                      </Button>
+                    )}
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-7"
+                      onClick={() => void runProposerWhitelistCheck()}
+                      disabled={proposerWhitelistCheckState === 'checking' || !selectedCreatorAddress}
+                    >
+                      {t('Re-check')}
+                    </Button>
+                  </div>
+                </div>
+              )}
+              {proposerWhitelistCheckError && <p className="mt-2 text-sm text-destructive">{proposerWhitelistCheckError}</p>}
             </div>
 
             <div className="rounded-md border px-4 py-3">
@@ -7487,6 +7503,7 @@ export default function AdminCreateEventForm({
                   && (
                     fundingCheckState === 'checking'
                     || allowedCreatorCheckState === 'checking'
+                    || proposerWhitelistCheckState === 'checking'
                     || slugValidationState === 'checking'
                     || openRouterCheckState === 'checking'
                     || contentCheckState === 'checking'

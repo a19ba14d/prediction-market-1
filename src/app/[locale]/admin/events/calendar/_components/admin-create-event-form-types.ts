@@ -7,10 +7,11 @@ export type SlugValidationState = 'idle' | 'checking' | 'unique' | 'duplicate' |
 export type FundingCheckState = 'idle' | 'checking' | 'ok' | 'insufficient' | 'no_wallet' | 'error'
 export type NativeGasCheckState = 'idle' | 'checking' | 'ok' | 'insufficient' | 'no_wallet' | 'error'
 export type AllowedCreatorCheckState = 'idle' | 'checking' | 'ok' | 'missing' | 'no_wallet' | 'error'
+export type ProposerWhitelistCheckState = 'idle' | 'checking' | 'ok' | 'missing' | 'no_wallet' | 'error'
 export type OpenRouterCheckState = 'idle' | 'checking' | 'ok' | 'error'
 export type ContentCheckState = 'idle' | 'checking' | 'ok' | 'error'
 export type SignatureTxStatus = 'idle' | 'awaiting_wallet' | 'confirming' | 'success' | 'error'
-export type PreSignCheckKey = 'funding' | 'nativeGas' | 'allowedCreator' | 'slug' | 'openRouter' | 'content'
+export type PreSignCheckKey = 'funding' | 'nativeGas' | 'allowedCreator' | 'proposerWhitelist' | 'slug' | 'openRouter' | 'content'
 
 export interface CategorySuggestion {
   name: string
