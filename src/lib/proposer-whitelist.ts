@@ -85,6 +85,11 @@ export function normalizeProposerAddressList(value: string | string[]) {
   return [...deduped.values()]
 }
 
+export function omitCreatorFromProposerAddressList(creator: Address, proposers: Address[]) {
+  const creatorKey = creator.toLowerCase()
+  return proposers.filter(proposer => proposer.toLowerCase() !== creatorKey)
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
@@ -150,6 +155,14 @@ export function readProposerWhitelistError(error: unknown) {
 
   if (lower.includes('user rejected') || lower.includes('user denied') || lower.includes('rejected the request')) {
     return 'Wallet signature was rejected.'
+  }
+
+  if (
+    lower.includes('invalid string length')
+    || lower.includes('request was aborted')
+    || lower.includes('unknown rpc error')
+  ) {
+    return 'Could not update proposer whitelist.'
   }
 
   if (lower.includes('notcreator') || lower.includes('not creator')) {
