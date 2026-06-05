@@ -33,11 +33,6 @@ export interface ProposerWhitelistMutationResponse {
   txHashes: Hash[]
 }
 
-export interface ProposerWhitelistDeploymentResponse {
-  whitelistAddress: Address
-  txHashes: Hash[]
-}
-
 const GAS_FEE_TOO_LOW_PATTERNS = [
   'gas price below minimum',
   'transaction underpriced',
@@ -88,11 +83,6 @@ export function normalizeProposerAddressList(value: string | string[]) {
     deduped.set(normalized.toLowerCase(), normalized)
   }
   return [...deduped.values()]
-}
-
-export function omitCreatorFromProposerAddressList(creator: Address, proposers: Address[]) {
-  const creatorKey = creator.toLowerCase()
-  return proposers.filter(proposer => proposer.toLowerCase() !== creatorKey)
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -162,11 +152,15 @@ export function readProposerWhitelistError(error: unknown) {
     return 'Wallet signature was rejected.'
   }
 
-  if (
-    lower.includes('invalid string length')
-    || lower.includes('request was aborted')
-    || lower.includes('unknown rpc error')
-  ) {
+  if (lower.includes('requested rpc call is not allowed')) {
+    return 'Embedded wallet provider rejected this RPC method.'
+  }
+
+  if (lower.includes('invalid string length')) {
+    return 'Embedded wallet could not process this transaction payload.'
+  }
+
+  if (lower.includes('request was aborted')) {
     return 'Could not update proposer whitelist.'
   }
 
