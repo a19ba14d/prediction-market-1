@@ -110,7 +110,7 @@ Kalshi can do that one deal at a time. Kuest makes the same capability available
 - [x] Operator-created markets with opt-in network sharing
 - [x] Gamma metadata API (site-isolated)
 - [x] Country Access Restrictions
-- [x] MOOV2 integration with onchain Proposer Whitelist
+- [⏱] MOOV2 integration with onchain Proposer Whitelist
 - [⏱] 🏆 MVP — stress tests, security, and financial consistency checks
 
 **In progress**
