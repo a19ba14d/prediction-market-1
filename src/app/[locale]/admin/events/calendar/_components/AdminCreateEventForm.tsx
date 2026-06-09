@@ -26,6 +26,7 @@ import type {
   PreSignCheckKey,
   ProposerWhitelistCheckState,
   RecurringOccurrencePreview,
+  ResolutionType,
   SignatureExecutionTx,
   SignerOption,
   SlugValidationState,
@@ -406,6 +407,8 @@ function useAdminCreateEventForm({
   const [storedAssets, setStoredAssets] = useState<EventCreationAssetPayload>(() => normalizeEventCreationAssetPayload(serverAssetPayload))
   const [slugValidationState, setSlugValidationState] = useState<SlugValidationState>('idle')
   const [slugCheckError, setSlugCheckError] = useState('')
+  const [resolutionType, setResolutionType] = useState<ResolutionType>('dro_moov2')
+  const [resolutionTypeTouched, setResolutionTypeTouched] = useState(false)
   const [requiredRewardUsdc, setRequiredRewardUsdc] = useState(FALLBACK_REQUIRED_USDC)
   const [targetChainId, setTargetChainId] = useState<number>(DEFAULT_CREATE_EVENT_CHAIN_ID)
   const [eoaUsdcBalance, setEoaUsdcBalance] = useState(0)
@@ -446,6 +449,31 @@ function useAdminCreateEventForm({
   const [pendingWorkflowStatus, setPendingWorkflowStatus] = useState<string | null>(null)
   const [preparedSignaturePlan, setPreparedSignaturePlan] = useState<PrepareResponse | null>(null)
   const [signatureTxs, setSignatureTxs] = useState<SignatureExecutionTx[]>([])
+  const resolutionSelectionRef = useRef<{ resolutionType: ResolutionType, touched: boolean }>({
+    resolutionType: 'dro_moov2',
+    touched: false,
+  })
+  useEffect(() => {
+    resolutionSelectionRef.current = {
+      resolutionType,
+      touched: resolutionTypeTouched,
+    }
+  }, [resolutionType, resolutionTypeTouched])
+  const handleResolutionTypeChange = useCallback((nextResolutionType: ResolutionType) => {
+    resolutionSelectionRef.current = {
+      resolutionType: nextResolutionType,
+      touched: true,
+    }
+    setResolutionTypeTouched(true)
+    setResolutionType(nextResolutionType)
+    setFundingCheckState('idle')
+    setPreparedSignaturePlan(null)
+    setSignatureTxs([])
+    setPendingWorkflowRequestId(null)
+    setPendingWorkflowStatus(null)
+    setSignatureFlowError('')
+    setSignatureFlowDone(false)
+  }, [])
   const [expandedPreSignChecks, setExpandedPreSignChecks] = useState<Record<PreSignCheckKey, boolean>>({
     funding: true,
     nativeGas: true,
@@ -2649,6 +2677,7 @@ function useAdminCreateEventForm({
 
     const payload: PreparePayloadBody = {
       chainId: targetChainId,
+      resolutionType,
       creator: eoaAddress,
       title: resolvedForm.title.trim(),
       slug: resolvedForm.slug.trim(),
@@ -2689,7 +2718,7 @@ function useAdminCreateEventForm({
       slug: option.slug.trim(),
     }))
     return payload
-  }, [creationMode, eoaAddress, getResolvedDateForms, isSportsEvent, recurringResolvedRules, selectedMainCategory, sportsDerivedContent.categories, sportsDerivedContent.options, sportsDerivedContent.payload, targetChainId])
+  }, [creationMode, eoaAddress, getResolvedDateForms, isSportsEvent, recurringResolvedRules, resolutionType, selectedMainCategory, sportsDerivedContent.categories, sportsDerivedContent.options, sportsDerivedContent.payload, targetChainId])
 
   const runOpenRouterCheck = useCallback(async () => {
     setOpenRouterCheckState('checking')
@@ -2967,6 +2996,7 @@ function useAdminCreateEventForm({
   }, [selectedCreatorAddress, t])
 
   const runFundingCheck = useCallback(async () => {
+    const resolutionSelectionAtStart = resolutionSelectionRef.current
     setFundingCheckState('checking')
     setFundingCheckError('')
 
@@ -2981,7 +3011,36 @@ function useAdminCreateEventForm({
       }
 
       const payload: MarketConfigResponse = await response.json()
-      const required = Number(payload.requiredCreatorFundingUsdc ?? FALLBACK_REQUIRED_USDC)
+      const serverDefaultResolutionType: ResolutionType
+        = payload.defaultResolutionType === 'dro_moov2' || payload.defaultResolutionType === 'uma_moov2'
+          ? payload.defaultResolutionType
+          : 'dro_moov2'
+      const resolutionSelectionChanged
+        = resolutionSelectionRef.current.resolutionType !== resolutionSelectionAtStart.resolutionType
+          || resolutionSelectionRef.current.touched !== resolutionSelectionAtStart.touched
+      if (resolutionSelectionChanged) {
+        setFundingCheckState('idle')
+        return false
+      }
+
+      const effectiveResolutionType = resolutionSelectionAtStart.touched
+        ? resolutionSelectionAtStart.resolutionType
+        : serverDefaultResolutionType
+      if (!resolutionSelectionAtStart.touched && resolutionSelectionAtStart.resolutionType !== serverDefaultResolutionType) {
+        resolutionSelectionRef.current = {
+          resolutionType: serverDefaultResolutionType,
+          touched: false,
+        }
+        setResolutionType(serverDefaultResolutionType)
+      }
+      const directFee = form.marketMode === 'multi_unique'
+        ? payload.directNegRiskQuestionFeeUsdc
+        : payload.directNormalMarketFeeUsdc
+      const required = Number(
+        effectiveResolutionType === 'dro_moov2'
+          ? directFee ?? payload.requiredCreatorFundingUsdc ?? FALLBACK_REQUIRED_USDC
+          : payload.requiredCreatorFundingUsdc ?? FALLBACK_REQUIRED_USDC,
+      )
       const normalizedRequired = Number.isFinite(required) && required > 0 ? required : FALLBACK_REQUIRED_USDC
       setRequiredRewardUsdc(normalizedRequired)
       const configuredChainId = typeof payload.defaultChainId === 'number' && payload.defaultChainId > 0
@@ -3029,7 +3088,7 @@ function useAdminCreateEventForm({
       setFundingCheckError('Could not validate USDC balance right now.')
       return false
     }
-  }, [eoaAddress, marketCount])
+  }, [eoaAddress, form.marketMode, marketCount])
 
   const runNativeGasCheck = useCallback(async () => {
     setNativeGasCheckState('checking')
@@ -4615,6 +4674,8 @@ function useAdminCreateEventForm({
     storedAssets,
     slugValidationState,
     slugCheckError,
+    resolutionType,
+    handleResolutionTypeChange,
     requiredRewardUsdc,
     targetChainId,
     eoaUsdcBalance,
@@ -4845,6 +4906,8 @@ export default function AdminCreateEventForm({
     setCategoryQuery,
     slugValidationState,
     slugCheckError,
+    resolutionType,
+    handleResolutionTypeChange,
     requiredRewardUsdc,
     eoaUsdcBalance,
     fundingCheckState,
@@ -6852,6 +6915,39 @@ export default function AdminCreateEventForm({
           </CardHeader>
           <CardContent className="space-y-3 pb-8">
             <div className="rounded-md border px-4 py-3">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="space-y-1">
+                  <p className="text-xl font-semibold text-foreground">
+                    {t('Resolution mode')}
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    {resolutionType === 'dro_moov2'
+                      ? t('Direct resolution is the default and finalizes by creator whitelist without UMA dispute.')
+                      : t('Official UMA MOOv2 keeps the external UMA proposal and dispute flow.')}
+                  </p>
+                </div>
+                <div className="grid grid-cols-2 overflow-hidden rounded-md border">
+                  {(['dro_moov2', 'uma_moov2'] as const).map(mode => (
+                    <button
+                      key={mode}
+                      type="button"
+                      className={cn(
+                        'px-3 py-2 text-sm font-semibold transition-colors',
+                        resolutionType === mode
+                          ? 'bg-primary text-primary-foreground'
+                          : 'bg-background text-muted-foreground hover:text-foreground',
+                      )}
+                      onClick={() => handleResolutionTypeChange(mode)}
+                    >
+                      {mode === 'dro_moov2'
+                        ? t('Direct')
+                        : t('UMA')}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div className="rounded-md border px-4 py-3">
               <div className="flex items-center justify-between gap-3">
                 <button
                   type="button"
@@ -6887,7 +6983,9 @@ export default function AdminCreateEventForm({
               {expandedPreSignChecks.funding && (
                 <div className="mt-2 space-y-1">
                   <p className="text-sm text-muted-foreground">
-                    This reward pays the UMA proposer who resolves the question correctly.
+                    {resolutionType === 'dro_moov2'
+                      ? t('This direct fee is paid onchain to Kuest when the market request is created.')
+                      : t('This reward pays the UMA proposer who resolves the question correctly.')}
                   </p>
                   <p className="text-sm text-muted-foreground">
                     Need
