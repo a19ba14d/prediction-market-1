@@ -5,7 +5,7 @@ import type { EventListSortBy, EventListStatusFilter } from '@/lib/event-list-fi
 import type { SportsSlugResolver } from '@/lib/sports-slug-mapping'
 import type { SportsVertical } from '@/lib/sports-vertical'
 import type { ConditionChangeLogEntry, Event, EventLiveChartConfig, EventSeriesEntry, QueryResult } from '@/types'
-import { and, asc, count, desc, eq, exists, ilike, inArray, or, sql } from 'drizzle-orm'
+import { and, asc, count, desc, eq, exists, ilike, inArray, not, or, sql } from 'drizzle-orm'
 import { cacheTag } from 'next/cache'
 import { DEFAULT_LOCALE } from '@/i18n/locales'
 import { cacheTags } from '@/lib/cache-tags'
@@ -441,6 +441,12 @@ interface ListEventsProps {
   userId?: string | undefined
   bookmarked?: boolean
   frequency?: 'all' | 'daily' | 'weekly' | 'monthly'
+  hideCrypto?: boolean
+  hideEarnings?: boolean
+  hideSports?: boolean
+  excludeSportsAuxiliary?: boolean
+  preferResolvedDateOrder?: boolean
+  skipLivePricing?: boolean
   status?: EventListStatusFilter
   offset?: number
   limit?: number
@@ -1166,6 +1172,14 @@ function buildTotalVolumeOrder() {
   ), 0)::double precision`
 }
 
+function buildVolume24hOrder() {
+  return sql<number>`COALESCE((
+    SELECT SUM(${markets.volume_24h})
+    FROM ${markets}
+    WHERE ${markets.event_id} = ${events.id}
+  ), 0)::double precision`
+}
+
 function buildEndDateNullsLastOrder() {
   return sql<number>`CASE WHEN ${events.end_date} IS NULL THEN 1 ELSE 0 END`
 }
@@ -1438,13 +1452,13 @@ async function buildEventListQueryContext({
   }
 
   if (hideSports) {
-    whereConditions.push(sql`NOT ${buildTagContainsCondition('sport')}`)
+    whereConditions.push(not(buildTagContainsCondition('sport')))
   }
   if (hideCrypto) {
-    whereConditions.push(sql`NOT ${buildTagContainsCondition('crypto')}`)
+    whereConditions.push(not(buildTagContainsCondition('crypto')))
   }
   if (hideEarnings) {
-    whereConditions.push(sql`NOT ${buildTagContainsCondition('earning')}`)
+    whereConditions.push(not(buildTagContainsCondition('earning')))
   }
 
   return {
@@ -1514,6 +1528,12 @@ export const EventRepository = {
     userId = '',
     bookmarked = false,
     frequency = 'all',
+    hideCrypto = false,
+    hideEarnings = false,
+    hideSports = false,
+    excludeSportsAuxiliary = false,
+    preferResolvedDateOrder = false,
+    skipLivePricing = false,
     status = 'active',
     offset = 0,
     limit = DEFAULT_EVENT_LIST_LIMIT,
@@ -1558,6 +1578,10 @@ export const EventRepository = {
       }
       whereConditions.push(buildPublicEventListVisibilityCondition(events.id))
       whereConditions.push(eq(events.is_hidden, false))
+
+      if (excludeSportsAuxiliary) {
+        whereConditions.push(sql`${events.slug} !~* ${SPORTS_AUXILIARY_SLUG_SQL_REGEX}`)
+      }
 
       if (search) {
         const searchTerms = normalizedSearch.split(/\s+/).filter(Boolean)
@@ -1686,6 +1710,16 @@ export const EventRepository = {
         )
       }
 
+      if (hideSports) {
+        whereConditions.push(not(buildTagContainsCondition('sport')))
+      }
+      if (hideCrypto) {
+        whereConditions.push(not(buildTagContainsCondition('crypto')))
+      }
+      if (hideEarnings) {
+        whereConditions.push(not(buildTagContainsCondition('earning')))
+      }
+
       const baseWhere = and(...whereConditions)
 
       let eventsData: DrizzleEventResult[] = []
@@ -1738,6 +1772,64 @@ export const EventRepository = {
         }) as DrizzleEventResult[]
 
         eventsData = orderedSearchData.sort((left, right) => {
+          const leftIndex = orderIndex.get(left.id) ?? Number.MAX_SAFE_INTEGER
+          const rightIndex = orderIndex.get(right.id) ?? Number.MAX_SAFE_INTEGER
+          return leftIndex - rightIndex
+        })
+      }
+      else if (status === 'resolved' && preferResolvedDateOrder && !sortBy) {
+        const resolvedDateOrder = sql<Date | null>`COALESCE(${events.resolved_at}, ${events.end_date})`
+        const resolvedDateNullRank = sql<number>`CASE WHEN ${resolvedDateOrder} IS NULL THEN 1 ELSE 0 END`
+        const resolvedEventIds = await db
+          .select({ id: events.id })
+          .from(events)
+          .where(baseWhere)
+          .orderBy(
+            asc(resolvedDateNullRank),
+            desc(resolvedDateOrder),
+            desc(events.created_at),
+            desc(events.updated_at),
+            desc(events.id),
+          )
+          .limit(safeLimit)
+          .offset(validOffset)
+
+        if (resolvedEventIds.length === 0) {
+          return { data: [], error: null }
+        }
+
+        const orderedIds = resolvedEventIds.map(event => event.id)
+        const orderIndex = new Map(orderedIds.map((id, index) => [id, index]))
+
+        const resolvedData = await db.query.events.findMany({
+          where: and(
+            baseWhere,
+            inArray(events.id, orderedIds),
+          ),
+          with: {
+            markets: {
+              with: {
+                sports: true,
+                condition: {
+                  with: { outcomes: true },
+                },
+              },
+            },
+
+            eventTags: {
+              with: { tag: true },
+            },
+            sports: true,
+
+            ...(userId && {
+              bookmarks: {
+                where: eq(bookmarks.user_id, userId),
+              },
+            }),
+          },
+        }) as DrizzleEventResult[]
+
+        eventsData = resolvedData.sort((left, right) => {
           const leftIndex = orderIndex.get(left.id) ?? Number.MAX_SAFE_INTEGER
           const rightIndex = orderIndex.get(right.id) ?? Number.MAX_SAFE_INTEGER
           return leftIndex - rightIndex
@@ -1797,8 +1889,11 @@ export const EventRepository = {
       }
       else {
         const totalVolumeOrder = buildTotalVolumeOrder()
+        const volume24hOrder = buildVolume24hOrder()
         const orderByClause = (() => {
           switch (sortBy) {
+            case 'volume_24h':
+              return [desc(volume24hOrder), desc(events.created_at)]
             case 'volume':
               return [desc(totalVolumeOrder), desc(events.created_at)]
             case 'created_at':
@@ -1812,8 +1907,26 @@ export const EventRepository = {
           }
         })()
 
-        eventsData = await db.query.events.findMany({
-          where: baseWhere,
+        const sortedEventIds = await db
+          .select({ id: events.id })
+          .from(events)
+          .where(baseWhere)
+          .orderBy(...orderByClause)
+          .limit(safeLimit)
+          .offset(validOffset)
+
+        if (sortedEventIds.length === 0) {
+          return { data: [], error: null }
+        }
+
+        const orderedIds = sortedEventIds.map(event => event.id)
+        const orderIndex = new Map(orderedIds.map((id, index) => [id, index]))
+
+        const sortedData = await db.query.events.findMany({
+          where: and(
+            baseWhere,
+            inArray(events.id, orderedIds),
+          ),
           with: {
             markets: {
               with: {
@@ -1835,17 +1948,22 @@ export const EventRepository = {
               },
             }),
           },
-          limit: safeLimit,
-          offset: validOffset,
-          orderBy: orderByClause,
         }) as DrizzleEventResult[]
+
+        eventsData = sortedData.sort((left, right) => {
+          const leftIndex = orderIndex.get(left.id) ?? Number.MAX_SAFE_INTEGER
+          const rightIndex = orderIndex.get(right.id) ?? Number.MAX_SAFE_INTEGER
+          return leftIndex - rightIndex
+        })
       }
 
-      const tokensForPricing = eventsData.flatMap(event =>
-        (event.markets ?? []).flatMap(market =>
-          (market.condition?.outcomes ?? []).map(outcome => outcome.token_id).filter(Boolean),
-        ),
-      )
+      const tokensForPricing = skipLivePricing
+        ? []
+        : eventsData.flatMap(event =>
+            (event.markets ?? []).flatMap(market =>
+              (market.condition?.outcomes ?? []).map(outcome => outcome.token_id).filter(Boolean),
+            ),
+          )
       const tagIds = Array.from(new Set(
         eventsData.flatMap(event =>
           (event.eventTags ?? [])
@@ -1859,8 +1977,8 @@ export const EventRepository = {
         sportsVolumeGroupKeyByEventId.values(),
       ))
       const [priceMap, lastTradeMap, localizedTagNamesById, localizedEventTitlesById, groupedSportsVolumesByGroupKey] = await Promise.all([
-        fetchOutcomePrices(tokensForPricing),
-        fetchLastTradePrices(tokensForPricing),
+        skipLivePricing ? Promise.resolve(new Map<string, OutcomePrices>()) : fetchOutcomePrices(tokensForPricing),
+        skipLivePricing ? Promise.resolve(new Map<string, number>()) : fetchLastTradePrices(tokensForPricing),
         getLocalizedTagNamesById(tagIds, locale),
         getLocalizedEventTitlesById(eventIds, locale),
         getSportsAggregatedVolumesByGroupKey(sportsVolumeGroupKeysForAggregation),
