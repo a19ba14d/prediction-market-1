@@ -8,10 +8,10 @@ import type {
 } from '@/lib/prediction-results-filters'
 import type { Event, Market } from '@/types'
 import { useAppKitAccount } from '@reown/appkit/react'
-import { keepPreviousData, useInfiniteQuery } from '@tanstack/react-query'
+import { useInfiniteQuery } from '@tanstack/react-query'
 import { BookmarkIcon, CheckIcon, ChevronRightIcon, Clock3Icon, FlameIcon, MessageCircleIcon, SearchIcon, Settings2Icon, XIcon } from 'lucide-react'
 import { useExtracted, useLocale } from 'next-intl'
-import { startTransition, Suspense, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { startTransition, Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { useCommentMetrics } from '@/app/[locale]/(platform)/event/[slug]/_hooks/useCommentMetrics'
 import { resolveResolvedOrderPanelDisplay } from '@/app/[locale]/(platform)/event/[slug]/_utils/resolved-order-panel-market'
 import PredictionResultsFilters from '@/app/[locale]/(platform)/predictions/[slug]/_components/PredictionResultsFilters'
@@ -58,7 +58,6 @@ interface PredictionResultsClientProps {
   routeTag: string
 }
 
-const COMPETITIVE_NEUTRAL_PROBABILITY = 50
 const TIMESTAMP_REFRESH_MS = 60_000
 
 function subscribeToCurrentTimestamp(onStoreChange: () => void) {
@@ -82,25 +81,6 @@ function resolvePrimaryMarket(event: Event): Market | null {
   return event.markets.find(market => !market.is_resolved && !market.condition?.resolved)
     ?? event.markets[0]
     ?? null
-}
-
-function sortPredictionEvents(events: Event[], sort: PredictionResultsSortOption) {
-  if (sort !== 'competitive') {
-    return events
-  }
-
-  return [...events].sort((left, right) => {
-    const leftProbability = resolvePrimaryMarket(left)?.probability ?? COMPETITIVE_NEUTRAL_PROBABILITY
-    const rightProbability = resolvePrimaryMarket(right)?.probability ?? COMPETITIVE_NEUTRAL_PROBABILITY
-    const leftScore = Math.abs(leftProbability - COMPETITIVE_NEUTRAL_PROBABILITY)
-    const rightScore = Math.abs(rightProbability - COMPETITIVE_NEUTRAL_PROBABILITY)
-
-    if (leftScore !== rightScore) {
-      return leftScore - rightScore
-    }
-
-    return (right.volume ?? 0) - (left.volume ?? 0)
-  })
 }
 
 function buildDateLabel(event: Event, currentTimestamp: number | null) {
@@ -208,6 +188,35 @@ function filterPredictionEventsByStatus(events: Event[], status: PredictionResul
   return events.filter((event) => {
     const isResolvedEvent = isEventResolvedLike(event)
     return status === 'resolved' ? isResolvedEvent : !isResolvedEvent
+  })
+}
+
+function normalizePredictionSearchText(value: string | null | undefined) {
+  return value
+    ?.normalize('NFKD')
+    .replace(/[\u0300-\u036F]/g, '')
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .trim()
+    ?? ''
+}
+
+function filterPredictionEventsByQuery(events: Event[], query: string) {
+  const queryTerms = normalizePredictionSearchText(query).split(/\s+/).filter(Boolean)
+
+  if (queryTerms.length === 0) {
+    return events
+  }
+
+  return events.filter((event) => {
+    const searchableText = normalizePredictionSearchText([
+      event.title,
+      event.slug,
+      event.main_tag,
+      ...event.tags.map(tag => `${tag.name} ${tag.slug}`),
+    ].filter(Boolean).join(' '))
+
+    return queryTerms.every(term => searchableText.includes(term))
   })
 }
 
@@ -390,21 +399,26 @@ function useInfiniteScrollError(infiniteScrollScopeKey: string) {
 }
 
 function useVisibleEvents({
+  bookmarkedOnly,
   data,
   initialEvents,
-  selectedSort,
+  query,
   selectedStatus,
 }: {
+  bookmarkedOnly: boolean
   data: { pages: Event[][] } | undefined
   initialEvents: Event[]
-  selectedSort: PredictionResultsSortOption
+  query: string
   selectedStatus: PredictionResultsStatusOption
 }) {
   return useMemo(() => {
     const pages = data?.pages.flat() ?? initialEvents
-    const filteredPages = filterPredictionEventsByStatus(pages, selectedStatus)
-    return sortPredictionEvents(filteredPages, selectedSort)
-  }, [data, initialEvents, selectedSort, selectedStatus])
+    const queryFilteredPages = filterPredictionEventsByQuery(pages, query)
+    const statusFilteredPages = filterPredictionEventsByStatus(queryFilteredPages, selectedStatus)
+    return bookmarkedOnly
+      ? statusFilteredPages.filter(event => event.is_bookmarked)
+      : statusFilteredPages
+  }, [bookmarkedOnly, data, initialEvents, query, selectedStatus])
 }
 
 function useResolvedResultDisplay({
@@ -522,7 +536,6 @@ export default function PredictionResultsClient({
     getNextPageParam: (lastPage, allPages) => lastPage.length === HOME_EVENTS_PAGE_SIZE ? allPages.length * HOME_EVENTS_PAGE_SIZE : undefined,
     initialData: canUseInitialData ? { pageParams: [0], pages: [initialEvents] } : undefined,
     initialPageParam: 0,
-    placeholderData: keepPreviousData,
     refetchOnMount: false,
     refetchOnWindowFocus: false,
     staleTime: 'static',
@@ -539,11 +552,39 @@ export default function PredictionResultsClient({
   })
 
   const visibleEvents = useVisibleEvents({
+    bookmarkedOnly: isBookmarked,
     data,
     initialEvents,
-    selectedSort,
+    query: initialQuery,
     selectedStatus,
   })
+
+  const handleSearchParamsChange = useCallback(({
+    searchParamsString: nextSearchParamsString,
+    sort,
+    status,
+  }: {
+    searchParamsString: string
+    sort: PredictionResultsSortOption
+    status: PredictionResultsStatusOption
+  }) => {
+    setSearchParamsString(current => current === nextSearchParamsString ? current : nextSearchParamsString)
+    setSelectedSortState((current) => {
+      const currentValue = current.key === routeScopeKey ? current.value : initialSort
+      return currentValue === sort ? current : { key: routeScopeKey, value: sort }
+    })
+    setSelectedStatusState((current) => {
+      const currentValue = current.key === routeScopeKey ? current.value : initialStatus
+      return currentValue === status ? current : { key: routeScopeKey, value: status }
+    })
+  }, [
+    initialSort,
+    initialStatus,
+    routeScopeKey,
+    setSearchParamsString,
+    setSelectedSortState,
+    setSelectedStatusState,
+  ])
 
   const isEmptyState = !isPending && !isFetching && visibleEvents.length === 0
   const showInitialSkeleton = visibleEvents.length === 0 && (isPending || isFetching)
@@ -668,17 +709,7 @@ export default function PredictionResultsClient({
     <div className="mx-auto flex w-full min-w-0 flex-col gap-6 lg:flex-row lg:items-start lg:gap-12">
       <Suspense fallback={null}>
         <PredictionResultsSearchParamsSync
-          onChange={({ searchParamsString: nextSearchParamsString, sort, status }) => {
-            setSearchParamsString(current => current === nextSearchParamsString ? current : nextSearchParamsString)
-            setSelectedSortState((current) => {
-              const currentValue = current.key === routeScopeKey ? current.value : initialSort
-              return currentValue === sort ? current : { key: routeScopeKey, value: sort }
-            })
-            setSelectedStatusState((current) => {
-              const currentValue = current.key === routeScopeKey ? current.value : initialStatus
-              return currentValue === status ? current : { key: routeScopeKey, value: status }
-            })
-          }}
+          onChange={handleSearchParamsChange}
         />
       </Suspense>
 
