@@ -1792,11 +1792,11 @@ export default function EventOrderPanelForm({
         {
           'rounded-xl border lg:w-85': !isMobile,
         },
-        'relative grid w-full overflow-hidden lg:shadow-xl/5',
+        'relative grid w-full grid-cols-[minmax(0,1fr)] overflow-hidden lg:shadow-xl/5',
         className,
       )}
     >
-      <div className="col-start-1 row-start-1 p-4">
+      <div className="col-start-1 row-start-1 min-w-0 p-4">
         {!isTradingDisabled && !isMobile && (
           desktopMarketInfo ?? (!isSingleMarket ? <EventOrderPanelMarketInfo market={activeMarket} /> : null)
         )}
