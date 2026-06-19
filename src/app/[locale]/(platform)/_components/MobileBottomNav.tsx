@@ -316,6 +316,7 @@ function MobileBottomNavContent({ pathname }: MobileBottomNavContentProps) {
                   <AppLink
                     intentPrefetch
                     href="/docs"
+                    target="_blank"
                     className="flex items-center gap-3 px-4 py-3 text-sm font-semibold"
                   >
                     <BookOpenIcon className="size-4 text-muted-foreground" />
