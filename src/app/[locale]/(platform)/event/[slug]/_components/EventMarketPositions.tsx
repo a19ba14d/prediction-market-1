@@ -9,6 +9,7 @@ import { PositionShareDialog } from '@/app/[locale]/(platform)/_components/Posit
 import EventConvertPositionsDialog from '@/app/[locale]/(platform)/event/[slug]/_components/EventConvertPositionsDialog'
 import AlertBanner from '@/components/AlertBanner'
 import EventIconImage from '@/components/EventIconImage'
+import { PositionReturnSummary, PositionValueCell } from '@/components/positions/PositionValueReturnCells'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent } from '@/components/ui/dialog'
 import { Drawer, DrawerContent } from '@/components/ui/drawer'
@@ -77,16 +78,22 @@ function resolvePositionCost(position: UserPosition) {
   const quantity = resolvePositionShares(position)
   const avgPrice = normalizePositionPrice(position.avgPrice)
     ?? normalizePositionPrice(Number(fromMicro(String(position.average_position ?? 0), 6)))
+  const explicitCost = toNumber(position.totalBought)
+    ?? toNumber(position.initialValue)
+    ?? (typeof position.total_position_cost === 'number'
+      ? Number(fromMicro(String(position.total_position_cost), 6))
+      : null)
+
+  if (explicitCost != null && explicitCost > 0) {
+    return explicitCost
+  }
+
   const derivedCost = quantity > 0 && typeof avgPrice === 'number' ? quantity * avgPrice : null
   if (derivedCost != null && derivedCost > 0) {
     return derivedCost
   }
 
-  return toNumber(position.totalBought)
-    ?? toNumber(position.initialValue)
-    ?? (typeof position.total_position_cost === 'number'
-      ? Number(fromMicro(String(position.total_position_cost), 2))
-      : null)
+  return explicitCost
 }
 
 function resolvePositionValue(position: UserPosition, marketPrice: number | null = null) {
@@ -244,12 +251,14 @@ function useMarketPositionsQuery({
         return []
       }
 
+      const currentPrice = resolveMarketOutcomePrice(market, outcomeIndex)
+
       return [{
         conditionId: market.condition_id,
         outcomeIndex,
         sharesDelta: missingShares,
-        avgPrice: 0.5,
-        currentPrice: resolveMarketOutcomePrice(market, outcomeIndex),
+        avgPrice: currentPrice,
+        currentPrice,
         title: market.short_title || market.title,
         slug: market.slug,
         eventSlug,
@@ -613,33 +622,22 @@ function MarketPositionRow({
         {averageLabel}
       </td>
       <td className="p-2 sm:px-3">
-        <div className="flex flex-col leading-tight">
-          <span className="text-2xs font-semibold sm:text-sm">{valueLabel}</span>
-          <span className="text-2xs font-medium tracking-wide text-muted-foreground uppercase">
-            {costLabel
-              ? t('Cost {amount}', { amount: costLabel })
-              : t('Cost —')}
-          </span>
-        </div>
+        <PositionValueCell
+          valueLabel={valueLabel}
+          costLabel={costLabel}
+          valueClassName="text-2xs font-semibold sm:text-sm"
+          costClassName="text-2xs font-medium tracking-wide"
+        />
       </td>
       <td className="p-2 pr-6 text-2xs font-semibold sm:px-3 sm:pr-6 sm:text-sm">
         <Tooltip delayDuration={0}>
           <TooltipTrigger asChild>
-            <span className="inline-flex flex-wrap items-center gap-1">
-              <span
-                className="inline-flex items-center"
-                style={{ borderBottom: '1px dotted currentColor', paddingBottom: '0.04rem' }}
-              >
-                {displayedReturnValue}
-              </span>
-              {!isNeutralReturn && (
-                <span className={cn('text-2xs font-semibold sm:text-sm', returnColorClass)}>
-                  (
-                  {signedPercentLabel}
-                  )
-                </span>
-              )}
-            </span>
+            <PositionReturnSummary
+              valueLabel={displayedReturnValue}
+              percentLabel={isNeutralReturn ? null : signedPercentLabel}
+              percentClassName={cn('text-2xs font-semibold sm:text-sm', returnColorClass)}
+              underlineValue
+            />
           </TooltipTrigger>
           <TooltipContent
             side="bottom"
