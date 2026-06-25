@@ -984,9 +984,7 @@ export default function EventOrderPanelForm({
   const availableNoTokenShares = Math.max(0, noTokenShares - lockedNoShares)
   const availableYesPositionShares = Math.max(0, yesPositionShares - lockedYesShares)
   const availableNoPositionShares = Math.max(0, noPositionShares - lockedNoShares)
-  const mergeableYesShares = Math.max(availableYesTokenShares, availableYesPositionShares)
-  const mergeableNoShares = Math.max(availableNoTokenShares, availableNoPositionShares)
-  const availableMergeShares = Math.max(0, Math.min(mergeableYesShares, mergeableNoShares))
+  const availableMergeShares = Math.max(0, Math.min(availableYesTokenShares, availableNoTokenShares))
   const availableSplitBalance = Math.max(0, balance.raw)
   const outcomeIndex = activeOutcome?.outcome_index as typeof OUTCOME_INDEX.YES | typeof OUTCOME_INDEX.NO | undefined
   const selectedShares = outcomeIndex === undefined

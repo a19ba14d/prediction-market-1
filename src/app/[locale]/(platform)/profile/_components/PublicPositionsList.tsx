@@ -1066,7 +1066,6 @@ export default function PublicPositionsList({ userAddress }: PublicPositionsList
   })
 
   const {
-    positionsByCondition,
     availableMergeableMarkets,
   } = useMergeableMarketsAvailability({ canSell, positionsWithIcons })
 
@@ -1074,7 +1073,6 @@ export default function PublicPositionsList({ userAddress }: PublicPositionsList
 
   const { isMergeProcessing, mergeBatchCount, handleMergeAll } = useMergePositionsAction({
     mergeableMarkets: availableMergeableMarkets,
-    positionsByCondition,
     hasMergeableMarkets,
     user,
     ensureTradingReady,
