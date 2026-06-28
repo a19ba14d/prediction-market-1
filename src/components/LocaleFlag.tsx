@@ -19,10 +19,10 @@ export default function LocaleFlag({
     <Image
       src={getLocaleFlagSrc(locale)}
       alt=""
-      width={16}
-      height={16}
+      width={18}
+      height={12}
       aria-hidden="true"
-      className={cn('size-4 shrink-0 rounded-full object-cover', className)}
+      className={cn('h-3 w-[18px] shrink-0 rounded-[3px] object-cover [clip-path:inset(0_round_3px)]', className)}
       {...props}
     />
   )

@@ -19,7 +19,7 @@ export const LOCALE_LABELS: Record<SupportedLocale, string> = {
 }
 
 export function getLocaleFlagSrc(locale: SupportedLocale) {
-  return `/images/flags/${locale}.png`
+  return `/images/flags/${locale}.svg`
 }
 
 export const LOOP_LABELS: Record<SupportedLocale, string> = {
