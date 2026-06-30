@@ -11,9 +11,9 @@ export const NON_DEFAULT_LOCALES = SUPPORTED_LOCALES.filter(
 export const LOCALE_LABELS: Record<SupportedLocale, string> = {
   en: 'English',
   de: 'Deutsch',
-  es: 'Spanish',
+  es: 'Español',
   pt: 'Português',
-  fr: 'French',
+  fr: 'Français',
   zh: '中文',
   ja: '日本語',
   ar: 'العربية',
