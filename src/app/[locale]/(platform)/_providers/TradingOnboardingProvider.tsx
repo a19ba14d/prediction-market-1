@@ -7,7 +7,7 @@ import type { User } from '@/types'
 import { useExtracted } from 'next-intl'
 import { usePathname } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { createPublicClient, erc20Abi, erc1155Abi, http, UserRejectedRequestError } from 'viem'
+import { createPublicClient, erc20Abi, erc1155Abi, http } from 'viem'
 import { useSignMessage, useSignTypedData } from 'wagmi'
 import { markApprovalStateWithoutTransactionAction } from '@/app/[locale]/(platform)/_actions/approve-tokens'
 import {
@@ -57,6 +57,10 @@ import {
 import { isTradingAuthRequiredError } from '@/lib/trading-auth/errors'
 import { hasUsableUserEmail } from '@/lib/user-email'
 import { defaultViemNetwork, resolveViemRpcUrl } from '@/lib/viem-network'
+import {
+  isRecoverableWalletConnectorError,
+  isUserRejectedRequestError,
+} from '@/lib/wallet'
 import { signAndSubmitDepositWalletCalls } from '@/lib/wallet/client'
 import {
   buildAutoRedeemAllowanceCalls,
@@ -373,6 +377,8 @@ function TradingOnboardingProviderContent({
   const { signMessageAsync } = useSignMessage()
   const { runWithSignaturePrompt } = useSignaturePromptRunner()
   const t = useExtracted()
+  const signatureRejectedMessage = t('You rejected the signature request.')
+  const walletConnectorReconnectMessage = t('Your wallet connection expired. Reconnect your wallet and try again.')
   const pathname = usePathname()
   const affiliateMetadata = useAffiliateOrderMetadata()
   const { open: openAppKit } = useAppKit()
@@ -380,6 +386,28 @@ function TradingOnboardingProviderContent({
   const { communityUrl, polygonRpcUrl } = usePublicRuntimeConfig()
   const communityApiUrl = communityUrl
   const viemRpcUrl = useMemo(() => resolveViemRpcUrl(polygonRpcUrl), [polygonRpcUrl])
+  const handleWalletActionError = useCallback((
+    error: unknown,
+    setError: (message: string) => void,
+  ) => {
+    if (isUserRejectedRequestError(error)) {
+      setError(signatureRejectedMessage)
+      return
+    }
+
+    if (isRecoverableWalletConnectorError(error)) {
+      setError(walletConnectorReconnectMessage)
+      void openAppKit({ view: 'Connect' })
+      return
+    }
+
+    if (error instanceof Error) {
+      setError(error.message || DEFAULT_ERROR_MESSAGE)
+      return
+    }
+
+    setError(DEFAULT_ERROR_MESSAGE)
+  }, [openAppKit, signatureRejectedMessage, walletConnectorReconnectMessage])
 
   const status = useOnboardingStatus(user, requiresTradingAuthRefresh)
   const normalizedUserAddress = user?.address?.trim().toLowerCase() ?? ''
@@ -662,13 +690,7 @@ function TradingOnboardingProviderContent({
       }
     }
     catch (error) {
-      setUsernameError(
-        error instanceof UserRejectedRequestError
-          ? t('You rejected the signature request.')
-          : error instanceof Error
-            ? error.message
-            : DEFAULT_ERROR_MESSAGE,
-      )
+      handleWalletActionError(error, setUsernameError)
     }
     finally {
       setIsUsernameSubmitting(false)
@@ -681,6 +703,7 @@ function TradingOnboardingProviderContent({
     signMessageAsync,
     shouldContinueTradingAuthPrompt,
     status,
+    handleWalletActionError,
     t,
     user?.address,
     user?.deposit_wallet_address,
@@ -861,23 +884,15 @@ function TradingOnboardingProviderContent({
       }
     }
     catch (error) {
-      if (error instanceof UserRejectedRequestError) {
-        setEnableTradingError(t('You rejected the signature request.'))
-      }
-      else if (error instanceof Error) {
-        setEnableTradingError(error.message || DEFAULT_ERROR_MESSAGE)
-      }
-      else {
-        setEnableTradingError(DEFAULT_ERROR_MESSAGE)
-      }
+      handleWalletActionError(error, setEnableTradingError)
       setEnableTradingStep('idle')
     }
   }, [
     enableTradingAuthForCurrentUser,
     enableTradingStep,
+    handleWalletActionError,
     refreshSessionUserState,
     status.hasTokenApprovals,
-    t,
     user?.address,
   ])
 
@@ -900,23 +915,15 @@ function TradingOnboardingProviderContent({
       }
     }
     catch (error) {
-      if (error instanceof UserRejectedRequestError) {
-        setEnableTradingError(t('You rejected the signature request.'))
-      }
-      else if (error instanceof Error) {
-        setEnableTradingError(error.message || DEFAULT_ERROR_MESSAGE)
-      }
-      else {
-        setEnableTradingError(DEFAULT_ERROR_MESSAGE)
-      }
+      handleWalletActionError(error, setEnableTradingError)
       setEnableTradingStep('idle')
     }
   }, [
     enableTradingAuthForCurrentUser,
     enableTradingStep,
+    handleWalletActionError,
     status.hasDeployedDepositWallet,
     status.hasTokenApprovals,
-    t,
     user?.address,
   ])
 
@@ -1071,6 +1078,10 @@ function TradingOnboardingProviderContent({
         if (result.code === 'deadline_expired') {
           setTokenApprovalError(t('Your signature expired. Click Sign again to create a fresh request.'))
         }
+        else if (result.code === 'wallet_connector_not_connected') {
+          setTokenApprovalError(walletConnectorReconnectMessage)
+          void openAppKit({ view: 'Connect' })
+        }
         else {
           setTokenApprovalError(result.error)
         }
@@ -1111,28 +1122,23 @@ function TradingOnboardingProviderContent({
       }
     }
     catch (error) {
-      if (error instanceof UserRejectedRequestError) {
-        setTokenApprovalError(t('You rejected the signature request.'))
-      }
-      else if (error instanceof Error) {
-        setTokenApprovalError(error.message || DEFAULT_ERROR_MESSAGE)
-      }
-      else {
-        setTokenApprovalError(DEFAULT_ERROR_MESSAGE)
-      }
+      handleWalletActionError(error, setTokenApprovalError)
       setApprovalsStep('idle')
     }
   }, [
     affiliateMetadata,
     approvalsStep,
+    handleWalletActionError,
     openFundModalIfBalanceEmpty,
     openNextRequirement,
+    openAppKit,
     refreshSessionUserState,
     resolveMissingApprovalCalls,
     resolveReferralExchanges,
     signTypedDataAsync,
     ensureAutoRedeemStatusFromChain,
     t,
+    walletConnectorReconnectMessage,
     user,
   ])
 
@@ -1174,6 +1180,10 @@ function TradingOnboardingProviderContent({
         if (result.code === 'deadline_expired') {
           setAutoRedeemError(t('Your signature expired. Click Sign again to create a fresh request.'))
         }
+        else if (result.code === 'wallet_connector_not_connected') {
+          setAutoRedeemError(walletConnectorReconnectMessage)
+          void openAppKit({ view: 'Connect' })
+        }
         else {
           setAutoRedeemError(result.error)
         }
@@ -1205,24 +1215,19 @@ function TradingOnboardingProviderContent({
       await openFundModalIfBalanceEmpty()
     }
     catch (error) {
-      if (error instanceof UserRejectedRequestError) {
-        setAutoRedeemError(t('You rejected the signature request.'))
-      }
-      else if (error instanceof Error) {
-        setAutoRedeemError(error.message || DEFAULT_ERROR_MESSAGE)
-      }
-      else {
-        setAutoRedeemError(DEFAULT_ERROR_MESSAGE)
-      }
+      handleWalletActionError(error, setAutoRedeemError)
       setAutoRedeemStep('idle')
     }
   }, [
     autoRedeemStep,
+    handleWalletActionError,
     openFundModalIfBalanceEmpty,
     openNextRequirement,
+    openAppKit,
     refreshSessionUserState,
     signTypedDataAsync,
     t,
+    walletConnectorReconnectMessage,
     user,
   ])
 
