@@ -42,6 +42,9 @@ const FEATURED_HOT_TOPICS_CACHE_LIFE = {
   revalidate: 900,
   expire: 31_536_000,
 } as const
+const FEATURED_HOT_TOPICS_TARGET_COUNT = 5
+const FEATURED_HOT_TOPICS_RECENT_RESOLVED_WINDOW_MS = 36 * 60 * 60 * 1000
+const FEATURED_HOT_TOPICS_FALLBACK_RESOLVED_WINDOW_MS = 7 * 24 * 60 * 60 * 1000
 
 function isNegRiskEvent(event: Event) {
   return Boolean(event.neg_risk || event.enable_neg_risk || event.neg_risk_augmented || event.neg_risk_market_id)
@@ -169,6 +172,8 @@ function normalizeSportsMarketType(value: string | null | undefined) {
   return value?.trim().toLowerCase().replace(/[^a-z0-9]+/g, ' ') ?? ''
 }
 
+const HOME_FEATURED_SPORTS_LINE_MARKET_LIMIT = 8
+
 function buildSportsMarketGroups(event: Event): HomeFeaturedSportsMarketGroup[] {
   const model = buildHomeSportsMoneylineModel(event)
   const groups: HomeFeaturedSportsMarketGroup[] = []
@@ -232,7 +237,7 @@ function buildSportsMarketGroups(event: Event): HomeFeaturedSportsMarketGroup[] 
     }
 
     const markets = compactGroups.get(label) ?? []
-    if (markets.length < 2) {
+    if (markets.length < HOME_FEATURED_SPORTS_LINE_MARKET_LIMIT) {
       markets.push(market)
       compactGroups.set(label, markets)
     }
@@ -268,9 +273,38 @@ export async function listHomeFeaturedHotTopics(
 
   const volume24h = sql<number>`COALESCE(SUM(${markets.volume_24h}), 0)::double precision`
   const localizedName = sql<string>`COALESCE(${tag_translations.name}, ${tags.name})`
+  interface HotTopicVolumeRow {
+    slug: string
+    label: string
+    volume24h: number
+  }
+
+  function mergeHotTopicRows(rows: HotTopicVolumeRow[]) {
+    const topicsBySlug = new Map<string, HomeFeaturedHotTopic>()
+
+    for (const row of rows) {
+      const slug = row.slug.trim()
+      const volume = Number(row.volume24h ?? 0)
+      if (!slug || volume <= 0) {
+        continue
+      }
+
+      const existing = topicsBySlug.get(slug)
+      topicsBySlug.set(slug, {
+        label: existing?.label ?? row.label,
+        slug,
+        href: resolveHotTopicHref(slug),
+        volume24h: (existing?.volume24h ?? 0) + volume,
+      })
+    }
+
+    return Array.from(topicsBySlug.values())
+      .sort((left, right) => right.volume24h - left.volume24h)
+      .slice(0, FEATURED_HOT_TOPICS_TARGET_COUNT)
+  }
 
   const { data, error } = await runQuery(async () => {
-    const result = await db
+    const activeRows = await db
       .select({
         slug: tags.slug,
         label: localizedName,
@@ -295,9 +329,47 @@ export async function listHomeFeaturedHotTopics(
       ))
       .groupBy(tags.id, tags.slug, tags.name, tag_translations.name)
       .orderBy(desc(volume24h))
-      .limit(5)
 
-    return { data: result, error: null }
+    async function listResolvedHotTopicRows(cutoff: Date) {
+      return db
+        .select({
+          slug: tags.slug,
+          label: localizedName,
+          volume24h,
+        })
+        .from(tags)
+        .innerJoin(event_tags, eq(event_tags.tag_id, tags.id))
+        .innerJoin(events, eq(events.id, event_tags.event_id))
+        .innerJoin(markets, eq(markets.event_id, events.id))
+        .leftJoin(tag_translations, and(
+          eq(tag_translations.tag_id, tags.id),
+          eq(tag_translations.locale, locale),
+        ))
+        .where(and(
+          eq(tags.is_main_category, true),
+          eq(tags.is_hidden, false),
+          eq(events.status, 'resolved'),
+          eq(events.is_hidden, false),
+          eq(markets.is_resolved, true),
+          sql`COALESCE(${events.resolved_at}, ${events.end_date}) >= ${cutoff}`,
+          buildPublicEventListVisibilityCondition(events.id),
+        ))
+        .groupBy(tags.id, tags.slug, tags.name, tag_translations.name)
+        .orderBy(desc(volume24h))
+    }
+
+    const recentResolvedCutoff = new Date(Date.now() - FEATURED_HOT_TOPICS_RECENT_RESOLVED_WINDOW_MS)
+    const recentResolvedRows = await listResolvedHotTopicRows(recentResolvedCutoff)
+    const primaryTopics = mergeHotTopicRows([...activeRows, ...recentResolvedRows])
+
+    if (primaryTopics.length >= FEATURED_HOT_TOPICS_TARGET_COUNT) {
+      return { data: primaryTopics, error: null }
+    }
+
+    const fallbackResolvedCutoff = new Date(Date.now() - FEATURED_HOT_TOPICS_FALLBACK_RESOLVED_WINDOW_MS)
+    const fallbackResolvedRows = await listResolvedHotTopicRows(fallbackResolvedCutoff)
+
+    return { data: mergeHotTopicRows([...activeRows, ...fallbackResolvedRows]), error: null }
   })
 
   if (error || !data) {
@@ -306,13 +378,6 @@ export async function listHomeFeaturedHotTopics(
   }
 
   return data
-    .map(row => ({
-      label: row.label,
-      slug: row.slug,
-      href: resolveHotTopicHref(row.slug),
-      volume24h: Number(row.volume24h ?? 0),
-    }))
-    .filter(topic => topic.slug.trim() && topic.volume24h > 0)
 }
 
 function buildHomeFeaturedSideCard(input: {
@@ -343,7 +408,7 @@ function buildHomeFeaturedSideCard(input: {
     return {
       ...configured,
       title: `${topTopic.label} leads volume`,
-      text: `${formatDollarValueLabel(topTopic.volume24h, { maximumFractionDigits: 0 })} traded in the last 24h across active markets.`,
+      text: `${formatDollarValueLabel(topTopic.volume24h, { maximumFractionDigits: 0 })} traded in the last 24h across active and recently settled markets.`,
       ctaLabel: configured.ctaLabel || 'Explore topic',
       ctaHref: configured.ctaHref || topTopic.href,
       icon: 'trending-up',
@@ -620,7 +685,10 @@ export async function listHomeFeaturedEvents(locale: SupportedLocale = DEFAULT_L
   const contextResult = await HomeFeaturedEventsRepository.listContextItems(
     resolvedEvents.map(entry => entry.target.featuredId),
     locale,
-    { includeDefaultFallback: true },
+    {
+      includeDefaultFallback: true,
+      eventIdsByFeaturedId: new Map(resolvedEvents.map(entry => [entry.target.featuredId, entry.target.eventId])),
+    },
   )
   const newsItemsByFeaturedId = contextResult.data ?? new Map()
   const commentsByEventSlug = new Map<string, { hasEnoughSeriesComments: boolean, items: HomeFeaturedContextItem[] }>()

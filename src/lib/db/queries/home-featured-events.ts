@@ -90,6 +90,13 @@ const VALID_TARGET_TYPES: HomeFeaturedTargetType[] = ['event', 'series']
 const VALID_SOURCES: HomeFeaturedSource[] = ['manual', 'ai']
 const MANUAL_CONTEXT_EXPIRY_MS = 365 * 24 * 60 * 60 * 1000
 type HomeFeaturedTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0]
+interface AdminFeaturedEventRow {
+  id: string
+  target_type: string
+  event_id: string | null
+  series_slug: string | null
+}
+type SeriesTargetMap = Map<string, ResolvedSeriesTarget>
 
 function normalizeContextMode(value: string | null | undefined): HomeFeaturedContextMode {
   return VALID_CONTEXT_MODES.includes(value as HomeFeaturedContextMode)
@@ -437,6 +444,22 @@ function mapContextRow(row: typeof home_featured_event_context_items.$inferSelec
   }
 }
 
+function resolveAdminFeaturedEventTarget(row: AdminFeaturedEventRow, seriesTargetBySlug: SeriesTargetMap) {
+  const targetType = normalizeTargetType(row.target_type)
+  const resolvedSeriesEvent = targetType === 'series'
+    ? seriesTargetBySlug.get(row.series_slug?.trim() ?? '') ?? null
+    : null
+  const eventId = targetType === 'series'
+    ? resolvedSeriesEvent?.id ?? row.event_id ?? null
+    : row.event_id ?? null
+
+  return {
+    targetType,
+    resolvedSeriesEvent,
+    eventId,
+  }
+}
+
 export const HomeFeaturedEventsRepository = {
   async listAdminFeaturedEvents(locale?: string): Promise<QueryResult<HomeFeaturedEventAdminItem[]>> {
     return runQuery(async () => {
@@ -469,8 +492,17 @@ export const HomeFeaturedEventsRepository = {
           return targetType === 'series' && seriesSlug ? [seriesSlug] : []
         }),
       )
+      const eventIdsByFeaturedId = new Map<string, string>()
+      for (const row of rows) {
+        const { eventId } = resolveAdminFeaturedEventTarget(row, seriesTargetBySlug)
+
+        if (eventId) {
+          eventIdsByFeaturedId.set(row.id, eventId)
+        }
+      }
+
       const contextResult = locale
-        ? await HomeFeaturedEventsRepository.listContextItems(rows.map(row => row.id), locale)
+        ? await HomeFeaturedEventsRepository.listContextItems(rows.map(row => row.id), locale, { eventIdsByFeaturedId })
         : { data: new Map<string, HomeFeaturedContextItem[]>(), error: null }
       if (contextResult.error) {
         return { data: null, error: contextResult.error }
@@ -479,13 +511,7 @@ export const HomeFeaturedEventsRepository = {
       const contextItemsByFeaturedId = contextResult.data ?? new Map<string, HomeFeaturedContextItem[]>()
 
       const items: HomeFeaturedEventAdminItem[] = rows.map((row) => {
-        const targetType = normalizeTargetType(row.target_type)
-        const resolvedSeriesEvent = targetType === 'series'
-          ? seriesTargetBySlug.get(row.series_slug?.trim() ?? '') ?? null
-          : null
-        const eventId = targetType === 'series'
-          ? resolvedSeriesEvent?.id ?? row.event_id ?? null
-          : row.event_id ?? null
+        const { eventId, resolvedSeriesEvent, targetType } = resolveAdminFeaturedEventTarget(row, seriesTargetBySlug)
 
         return {
           id: row.id,
@@ -610,7 +636,10 @@ export const HomeFeaturedEventsRepository = {
   async listContextItems(
     featuredEventIds: string[],
     locale: string,
-    options: { includeDefaultFallback?: boolean } = {},
+    options: {
+      includeDefaultFallback?: boolean
+      eventIdsByFeaturedId?: Map<string, string | null | undefined>
+    } = {},
   ): Promise<QueryResult<Map<string, HomeFeaturedContextItem[]>>> {
     if (featuredEventIds.length === 0) {
       return { data: new Map(), error: null }
@@ -621,12 +650,21 @@ export const HomeFeaturedEventsRepository = {
       const contextLocales = options.includeDefaultFallback && locale !== DEFAULT_LOCALE
         ? [locale, DEFAULT_LOCALE]
         : [locale]
+      const eventIdsByFeaturedId = options.eventIdsByFeaturedId
+      const allowedEventIds = Array.from(new Set(
+        Array.from(eventIdsByFeaturedId?.values() ?? [])
+          .map(eventId => eventId?.trim())
+          .filter((eventId): eventId is string => Boolean(eventId)),
+      ))
       const rows = await db
         .select()
         .from(home_featured_event_context_items)
         .where(and(
           inArray(home_featured_event_context_items.featured_event_id, featuredEventIds),
           inArray(home_featured_event_context_items.locale, contextLocales),
+          ...(allowedEventIds.length > 0
+            ? [inArray(home_featured_event_context_items.event_id, allowedEventIds)]
+            : []),
           gt(home_featured_event_context_items.expires_at, now),
         ))
         .orderBy(
@@ -640,6 +678,11 @@ export const HomeFeaturedEventsRepository = {
 
       const itemsByFeaturedId = new Map<string, HomeFeaturedContextItem[]>()
       for (const row of rows) {
+        const expectedEventId = eventIdsByFeaturedId?.get(row.featured_event_id)?.trim()
+        if (expectedEventId && row.event_id !== expectedEventId) {
+          continue
+        }
+
         const items = itemsByFeaturedId.get(row.featured_event_id) ?? []
         if (items.length < 3) {
           items.push(mapContextRow(row))
