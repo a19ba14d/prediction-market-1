@@ -13,9 +13,7 @@ import type {
   Market,
 } from '@/types'
 import { and, desc, eq, sql } from 'drizzle-orm'
-import { cacheLife, cacheTag } from 'next/cache'
 import { DEFAULT_LOCALE } from '@/i18n/locales'
-import { cacheTags } from '@/lib/cache-tags'
 import { buildCommunityApiUrl } from '@/lib/community-url'
 import { OUTCOME_INDEX } from '@/lib/constants'
 import { EventRepository } from '@/lib/db/queries/event'
@@ -42,11 +40,6 @@ const FEATURED_COMMENTS_LIMIT = 8
 const FEATURED_CONTEXT_ITEMS_PER_EVENT = 6
 const MIN_COMMENTS_FOR_SERIES = 3
 const CONTEXT_ITEM_TTL_MS = 30 * 60 * 1000
-const FEATURED_HOT_TOPICS_CACHE_LIFE = {
-  stale: 900,
-  revalidate: 900,
-  expire: 31_536_000,
-} as const
 const FEATURED_HOT_TOPICS_TARGET_COUNT = 5
 const FEATURED_HOT_TOPICS_RECENT_RESOLVED_WINDOW_MS = 36 * 60 * 60 * 1000
 const FEATURED_HOT_TOPICS_FALLBACK_RESOLVED_WINDOW_MS = 7 * 24 * 60 * 60 * 1000
@@ -311,11 +304,6 @@ function resolveHotTopicHref(slug: string) {
 export async function listHomeFeaturedHotTopics(
   locale: SupportedLocale = DEFAULT_LOCALE,
 ): Promise<HomeFeaturedHotTopic[]> {
-  'use cache'
-  cacheLife(FEATURED_HOT_TOPICS_CACHE_LIFE)
-  cacheTag(cacheTags.eventsList)
-  cacheTag(cacheTags.mainTags(locale))
-
   const volume24h = sql<number>`COALESCE(SUM(${markets.volume_24h}), 0)::double precision`
   const fallbackVolume = sql<number>`
     COALESCE(
@@ -384,7 +372,9 @@ export async function listHomeFeaturedHotTopics(
       }
     }
 
-    return nextTopics.slice(0, FEATURED_HOT_TOPICS_TARGET_COUNT)
+    return nextTopics
+      .sort((left, right) => right.volume24h - left.volume24h)
+      .slice(0, FEATURED_HOT_TOPICS_TARGET_COUNT)
   }
 
   const { data, error } = await runQuery(async () => {
@@ -416,6 +406,8 @@ export async function listHomeFeaturedHotTopics(
       .orderBy(desc(volume24h))
 
     async function listResolvedHotTopicRows(cutoff: Date) {
+      const cutoffIso = cutoff.toISOString()
+
       return db
         .select({
           slug: tags.slug,
@@ -437,7 +429,7 @@ export async function listHomeFeaturedHotTopics(
           eq(events.status, 'resolved'),
           eq(events.is_hidden, false),
           eq(markets.is_resolved, true),
-          sql`COALESCE(${events.resolved_at}, ${events.end_date}) >= ${cutoff}`,
+          sql`COALESCE(${events.resolved_at}, ${events.end_date}) >= ${cutoffIso}::timestamptz`,
           buildPublicEventListVisibilityCondition(events.id),
         ))
         .groupBy(tags.id, tags.slug, tags.name, tag_translations.name)
