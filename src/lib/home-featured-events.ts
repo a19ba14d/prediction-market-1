@@ -30,6 +30,11 @@ import { formatDollarValueLabel } from '@/lib/formatters'
 import { getHomeFeaturedSettingsFromSettings } from '@/lib/home-featured-settings'
 import { resolveDisplayPrice } from '@/lib/market-chance'
 import { resolvePublicRuntimeEnv } from '@/lib/public-runtime-config.shared'
+import {
+  mergeSportsEventGroupMarkets,
+  resolveSportsMarketsVolume,
+  sumFiniteSportsValues,
+} from '@/lib/sports-event-market-utils'
 import { buildHomeSportsMoneylineModel, resolveHomeSportsButtonChance } from '@/lib/sports-home-card'
 
 const CHART_COLORS = ['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)']
@@ -259,6 +264,46 @@ function buildSportsMarketGroups(event: Event): HomeFeaturedSportsMarketGroup[] 
   return groups.slice(0, 3)
 }
 
+function resolveMergedFeaturedSportsEvent(baseEvent: Event, eventsGroup: Event[]) {
+  const displayEvent = eventsGroup.find(event => event.sports_parent_event_id == null)
+    ?? eventsGroup.find(event => (event.sports_teams?.length ?? 0) >= 2)
+    ?? baseEvent
+  const mergedMarkets = mergeSportsEventGroupMarkets(eventsGroup)
+  if (mergedMarkets.length === 0) {
+    return baseEvent
+  }
+
+  const totalMarketsCount = sumFiniteSportsValues(eventsGroup.map(event => event.total_markets_count))
+  const activeMarketsCount = mergedMarkets.filter(
+    market => market.is_active && !market.is_resolved && !market.condition?.resolved,
+  ).length
+
+  return {
+    ...displayEvent,
+    markets: mergedMarkets,
+    volume: resolveSportsMarketsVolume(mergedMarkets),
+    active_markets_count: activeMarketsCount,
+    total_markets_count: totalMarketsCount > 0 ? totalMarketsCount : mergedMarkets.length,
+  }
+}
+
+async function resolveFeaturedSportsEventPayload(event: Event, locale: SupportedLocale) {
+  if (!isSportsEvent(event)) {
+    return event
+  }
+
+  const { data: sportsEventsGroup, error } = await EventRepository.getSportsEventGroupBySlug(event.slug, '', locale)
+  if (error) {
+    console.warn('Failed to load featured sports event group:', error)
+    return event
+  }
+  if (!sportsEventsGroup || sportsEventsGroup.length <= 1) {
+    return event
+  }
+
+  return resolveMergedFeaturedSportsEvent(event, sportsEventsGroup)
+}
+
 function resolveHotTopicHref(slug: string) {
   return `/${slug.trim().toLowerCase()}`
 }
@@ -272,20 +317,35 @@ export async function listHomeFeaturedHotTopics(
   cacheTag(cacheTags.mainTags(locale))
 
   const volume24h = sql<number>`COALESCE(SUM(${markets.volume_24h}), 0)::double precision`
+  const fallbackVolume = sql<number>`
+    COALESCE(
+      NULLIF(SUM(${markets.volume}), 0),
+      COUNT(${markets.condition_id})::double precision,
+      0
+    )::double precision
+  `
   const localizedName = sql<string>`COALESCE(${tag_translations.name}, ${tags.name})`
   interface HotTopicVolumeRow {
     slug: string
     label: string
     volume24h: number
+    fallbackVolume: number
   }
 
-  function mergeHotTopicRows(rows: HotTopicVolumeRow[]) {
-    const topicsBySlug = new Map<string, HomeFeaturedHotTopic>()
+  function mergeHotTopicRows(rows: HotTopicVolumeRow[], includeFallbackVolume: boolean) {
+    const topicsBySlug = new Map<string, HomeFeaturedHotTopic & { score: number }>()
 
     for (const row of rows) {
       const slug = row.slug.trim()
-      const volume = Number(row.volume24h ?? 0)
-      if (!slug || volume <= 0) {
+      const volume24hValue = Number(row.volume24h ?? 0)
+      const fallbackVolumeValue = Number(row.fallbackVolume ?? 0)
+      const topicScore = volume24hValue > 0
+        ? volume24hValue
+        : includeFallbackVolume
+          ? fallbackVolumeValue
+          : 0
+
+      if (!slug || topicScore <= 0) {
         continue
       }
 
@@ -294,13 +354,37 @@ export async function listHomeFeaturedHotTopics(
         label: existing?.label ?? row.label,
         slug,
         href: resolveHotTopicHref(slug),
-        volume24h: (existing?.volume24h ?? 0) + volume,
+        volume24h: (existing?.volume24h ?? 0) + Math.max(0, volume24hValue),
+        score: (existing?.score ?? 0) + topicScore,
       })
     }
 
     return Array.from(topicsBySlug.values())
-      .sort((left, right) => right.volume24h - left.volume24h)
+      .sort((left, right) => right.score - left.score)
       .slice(0, FEATURED_HOT_TOPICS_TARGET_COUNT)
+      .map(({ score: _score, ...topic }) => topic)
+  }
+
+  function appendMissingHotTopics(
+    primaryTopics: HomeFeaturedHotTopic[],
+    fallbackTopics: HomeFeaturedHotTopic[],
+  ) {
+    const nextTopics = [...primaryTopics]
+    const seenSlugs = new Set(primaryTopics.map(topic => topic.slug))
+
+    for (const topic of fallbackTopics) {
+      if (seenSlugs.has(topic.slug)) {
+        continue
+      }
+
+      nextTopics.push(topic)
+      seenSlugs.add(topic.slug)
+      if (nextTopics.length >= FEATURED_HOT_TOPICS_TARGET_COUNT) {
+        break
+      }
+    }
+
+    return nextTopics.slice(0, FEATURED_HOT_TOPICS_TARGET_COUNT)
   }
 
   const { data, error } = await runQuery(async () => {
@@ -309,6 +393,7 @@ export async function listHomeFeaturedHotTopics(
         slug: tags.slug,
         label: localizedName,
         volume24h,
+        fallbackVolume,
       })
       .from(tags)
       .innerJoin(event_tags, eq(event_tags.tag_id, tags.id))
@@ -336,6 +421,7 @@ export async function listHomeFeaturedHotTopics(
           slug: tags.slug,
           label: localizedName,
           volume24h,
+          fallbackVolume,
         })
         .from(tags)
         .innerJoin(event_tags, eq(event_tags.tag_id, tags.id))
@@ -360,7 +446,7 @@ export async function listHomeFeaturedHotTopics(
 
     const recentResolvedCutoff = new Date(Date.now() - FEATURED_HOT_TOPICS_RECENT_RESOLVED_WINDOW_MS)
     const recentResolvedRows = await listResolvedHotTopicRows(recentResolvedCutoff)
-    const primaryTopics = mergeHotTopicRows([...activeRows, ...recentResolvedRows])
+    const primaryTopics = mergeHotTopicRows([...activeRows, ...recentResolvedRows], false)
 
     if (primaryTopics.length >= FEATURED_HOT_TOPICS_TARGET_COUNT) {
       return { data: primaryTopics, error: null }
@@ -368,8 +454,9 @@ export async function listHomeFeaturedHotTopics(
 
     const fallbackResolvedCutoff = new Date(Date.now() - FEATURED_HOT_TOPICS_FALLBACK_RESOLVED_WINDOW_MS)
     const fallbackResolvedRows = await listResolvedHotTopicRows(fallbackResolvedCutoff)
+    const fallbackTopics = mergeHotTopicRows([...activeRows, ...fallbackResolvedRows], true)
 
-    return { data: mergeHotTopicRows([...activeRows, ...fallbackResolvedRows]), error: null }
+    return { data: appendMissingHotTopics(primaryTopics, fallbackTopics), error: null }
   })
 
   if (error || !data) {
@@ -408,7 +495,7 @@ function buildHomeFeaturedSideCard(input: {
     return {
       ...configured,
       title: `${topTopic.label} leads volume`,
-      text: `${formatDollarValueLabel(topTopic.volume24h, { maximumFractionDigits: 0 })} traded in the last 24h across active and recently settled markets.`,
+      text: `${formatDollarValueLabel(topTopic.volume24h, { maximumFractionDigits: 0 })} tracked across active and recently settled markets.`,
       ctaLabel: configured.ctaLabel || 'Explore topic',
       ctaHref: configured.ctaHref || topTopic.href,
       icon: 'trending-up',
@@ -657,7 +744,7 @@ export async function listHomeFeaturedEvents(locale: SupportedLocale = DEFAULT_L
 
   const events = await Promise.all(targets.map(async (target) => {
     const { data } = await EventRepository.getEventBySlug(target.eventSlug, '', locale)
-    return data ? { target, event: data } : null
+    return data ? { target, event: await resolveFeaturedSportsEventPayload(data, locale) } : null
   }))
   const resolvedEvents = events.filter((entry): entry is NonNullable<typeof entry> => entry !== null)
   if (resolvedEvents.length === 0) {
