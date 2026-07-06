@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildAdminSportsDerivedContent,
+  buildAdminSportsStepErrors,
   createAdminSportsCustomMarket,
   createInitialAdminSportsForm,
 } from '@/lib/admin-sports-create'
@@ -282,5 +283,83 @@ describe('admin sports create', () => {
       'moneyline-draw',
       'moneyline-away',
     ])
+  })
+
+  it('rejects source IDs without a supported provider', () => {
+    const sports = createInitialAdminSportsForm()
+    sports.section = 'games'
+    sports.eventVariant = 'standard'
+    sports.sourceEventId = 'fixture-123'
+
+    const derived = buildAdminSportsDerivedContent({
+      baseSlug: 'lakers-vs-celtics-abc',
+      sports,
+    })
+
+    expect(derived.payload).toBeNull()
+    expect(buildAdminSportsStepErrors({
+      step: 1,
+      sports,
+      hasTeamLogoByHostStatus: {
+        home: false,
+        away: false,
+      },
+    })).toEqual([
+      'Select a supported sports data provider for the source event or game ID.',
+    ])
+  })
+
+  it('allows a complete source identity to replace manual game fields', () => {
+    const sports = createInitialAdminSportsForm()
+    sports.section = 'games'
+    sports.eventVariant = 'standard'
+    sports.sourceProvider = 'TheSportsDB'
+    sports.sourceEventId = 'fixture-123'
+
+    const derived = buildAdminSportsDerivedContent({
+      baseSlug: 'lakers-vs-celtics-abc',
+      sports,
+    })
+
+    expect(derived.payload).toEqual(expect.objectContaining({
+      section: 'games',
+      eventVariant: 'standard',
+      sourceProvider: 'thesportsdb',
+      sourceEventId: 'fixture-123',
+    }))
+    expect(derived.payload?.teams).toBeUndefined()
+    expect(derived.payload?.sportSlug).toBeUndefined()
+    expect(derived.payload?.leagueSlug).toBeUndefined()
+  })
+
+  it('omits blank source match confidence and clamps provided values', () => {
+    const sports = createInitialAdminSportsForm()
+    sports.section = 'games'
+    sports.eventVariant = 'standard'
+    sports.sourceProvider = 'thesportsdb'
+    sports.sourceEventId = 'fixture-123'
+
+    expect(buildAdminSportsDerivedContent({
+      baseSlug: 'lakers-vs-celtics-abc',
+      sports,
+    }).payload?.sourceMatchConfidence).toBeUndefined()
+
+    sports.sourceMatchConfidence = '1.7'
+    expect(buildAdminSportsDerivedContent({
+      baseSlug: 'lakers-vs-celtics-abc',
+      sports,
+    }).payload?.sourceMatchConfidence).toBe(1)
+
+    sports.sourceMatchConfidence = '-0.2'
+    expect(buildAdminSportsDerivedContent({
+      baseSlug: 'lakers-vs-celtics-abc',
+      sports,
+    }).payload?.sourceMatchConfidence).toBe(0)
+
+    sports.sourceMatchConfidence = '0.75abc'
+    expect(buildAdminSportsDerivedContent({
+      baseSlug: 'lakers-vs-celtics-abc',
+      sports,
+    }).payload?.sourceMatchConfidence).toBeUndefined()
   })
 })

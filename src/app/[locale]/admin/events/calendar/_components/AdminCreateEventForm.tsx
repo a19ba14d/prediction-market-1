@@ -22,6 +22,7 @@ import {
   ImageUp,
   Loader2Icon,
   PlusIcon,
+  SearchIcon,
   SparkleIcon,
   SquarePenIcon,
   Trash2Icon,
@@ -29,6 +30,7 @@ import {
 } from 'lucide-react'
 import { useExtracted } from 'next-intl'
 import dynamic from 'next/dynamic'
+import { useEffect } from 'react'
 import AppLink from '@/components/AppLink'
 import EventIconImage from '@/components/EventIconImage'
 import { Button } from '@/components/ui/button'
@@ -59,6 +61,11 @@ import {
   getAdminSportsMarketTypeDefaultOutcomes,
   resolveAdminSportsMarketTypeOption,
 } from '@/lib/admin-sports-create'
+import {
+  filterSportsSourceProvidersByCategory,
+  formatSportsSourceProviderLabel,
+  SPORTS_SOURCE_PROVIDERS,
+} from '@/lib/sports-source/providers'
 
 import { cn } from '@/lib/utils'
 
@@ -99,6 +106,7 @@ export default function AdminCreateEventForm({
   hasConfiguredServerSigners = true,
   serverDraftPayload = null,
   serverAssetPayload = null,
+  configuredSportsSourceProviders = [],
 }: AdminCreateEventFormProps) {
   const t = useExtracted()
   const hook = useAdminCreateEventForm({
@@ -135,6 +143,12 @@ export default function AdminCreateEventForm({
     signers,
     isLoadingSigners,
     sportsForm,
+    sportsMatchQuery,
+    setSportsMatchQuery,
+    sportsMatchCandidates,
+    selectedSportsMatch,
+    isSearchingSportsMatches,
+    sportsMatchError,
     mainCategories,
     categoryQuery,
     setCategoryQuery,
@@ -253,6 +267,9 @@ export default function AdminCreateEventForm({
     isStepValid,
     handleSportsFieldChange,
     handleSportsTeamChange,
+    applySportsMatchCandidate,
+    clearSportsMatchCandidate,
+    searchSportsMatches,
     handleSportsTeamLogoUpload,
     handleSportsPropChange,
     handleSportSlugSelectChange,
@@ -291,6 +308,27 @@ export default function AdminCreateEventForm({
     isStepFourPreSignChecksRunning,
     stepFourNextButtonContent,
   } = hook
+  const sportsSourceProviderOptions = filterSportsSourceProvidersByCategory({
+    providers: configuredSportsSourceProviders,
+    category: form.mainCategorySlug,
+  })
+  const sportsSourceProviderSelectValue = SPORTS_SOURCE_PROVIDERS.includes(sportsForm.sourceProvider as typeof SPORTS_SOURCE_PROVIDERS[number])
+    && sportsSourceProviderOptions.includes(sportsForm.sourceProvider as typeof sportsSourceProviderOptions[number])
+    ? sportsForm.sourceProvider
+    : 'none'
+
+  useEffect(() => {
+    if (!sportsForm.sourceProvider || sportsSourceProviderSelectValue !== 'none') {
+      return
+    }
+
+    handleSportsFieldChange('sourceProvider', '')
+    handleSportsFieldChange('sourceEventId', '')
+    handleSportsFieldChange('sourceGameId', '')
+    handleSportsFieldChange('sourceLeagueId', '')
+    handleSportsFieldChange('sourceLeagueLabel', '')
+    handleSportsFieldChange('sourceMatchConfidence', '')
+  }, [handleSportsFieldChange, sportsForm.sourceProvider, sportsSourceProviderSelectValue])
 
   return (
     <form
@@ -636,6 +674,142 @@ export default function AdminCreateEventForm({
                           </Select>
                         </div>
                       </div>
+
+                      <details className="rounded-md border border-border bg-muted/10 p-4">
+                        <summary className="cursor-pointer text-sm font-medium">
+                          {selectedSportsMatch
+                            ? t('Sports match: {match}', {
+                                match: [
+                                  selectedSportsMatch.homeTeam?.name,
+                                  selectedSportsMatch.awayTeam?.name,
+                                ].filter(Boolean).join(' vs ') || selectedSportsMatch.eventId,
+                              })
+                            : t('Sports match')}
+                        </summary>
+
+                        <div className="mt-4 grid gap-3">
+                          <div className="flex flex-col gap-2 sm:flex-row">
+                            <Input
+                              value={sportsMatchQuery}
+                              onChange={event => setSportsMatchQuery(event.target.value)}
+                              placeholder={form.title || t('Search match')}
+                              onKeyDown={(event) => {
+                                if (event.key === 'Enter') {
+                                  event.preventDefault()
+                                  void searchSportsMatches()
+                                }
+                              }}
+                            />
+                            <Button
+                              type="button"
+                              variant="secondary"
+                              onClick={() => void searchSportsMatches()}
+                              disabled={isSearchingSportsMatches}
+                            >
+                              {isSearchingSportsMatches
+                                ? <Loader2Icon className="size-4 animate-spin" />
+                                : <SearchIcon className="size-4" />}
+                              <span>{t('Search')}</span>
+                            </Button>
+                            {selectedSportsMatch
+                              ? (
+                                  <Button type="button" variant="outline" onClick={clearSportsMatchCandidate}>
+                                    {t('Clear')}
+                                  </Button>
+                                )
+                              : null}
+                          </div>
+
+                          {sportsMatchError
+                            ? <p className="text-sm text-destructive">{sportsMatchError}</p>
+                            : null}
+
+                          {sportsMatchCandidates.length > 0
+                            ? (
+                                <div className="grid gap-2">
+                                  {sportsMatchCandidates.map(candidate => (
+                                    <button
+                                      key={`${candidate.provider}:${candidate.eventId}:${candidate.gameId ?? ''}`}
+                                      type="button"
+                                      className={cn(`
+                                        flex min-w-0 items-center justify-between gap-3 rounded-md border bg-background
+                                        px-3 py-2 text-left text-sm transition
+                                        hover:border-primary/60
+                                      `)}
+                                      onClick={() => applySportsMatchCandidate(candidate)}
+                                    >
+                                      <span className="min-w-0">
+                                        <span className="block truncate font-medium">
+                                          {[candidate.homeTeam?.name, candidate.awayTeam?.name].filter(Boolean).join(' vs ') || candidate.eventId}
+                                        </span>
+                                        <span className="block truncate text-xs text-muted-foreground">
+                                          {[candidate.leagueName, candidate.startTime ? formatEventScheduleLabel(new Date(candidate.startTime)) : null, candidate.provider]
+                                            .filter(Boolean)
+                                            .join(' · ')}
+                                        </span>
+                                      </span>
+                                      <span className="shrink-0 text-xs text-muted-foreground">
+                                        {Math.round((candidate.confidence ?? 0) * 100)}
+                                        %
+                                      </span>
+                                    </button>
+                                  ))}
+                                </div>
+                              )
+                            : null}
+
+                          <div className="
+                            grid grid-cols-1 gap-3 border-t border-border/50 pt-3
+                            sm:grid-cols-2
+                            lg:grid-cols-4
+                          "
+                          >
+                            <div className="space-y-1.5">
+                              <Label htmlFor="sports-source-provider">{t('Provider')}</Label>
+                              <Select
+                                value={sportsSourceProviderSelectValue}
+                                onValueChange={value => handleSportsFieldChange('sourceProvider', value === 'none' ? '' : value)}
+                              >
+                                <SelectTrigger id="sports-source-provider" className="w-full">
+                                  <SelectValue placeholder={t('Provider')} />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="none">{t('None')}</SelectItem>
+                                  {sportsSourceProviderOptions.map(provider => (
+                                    <SelectItem key={provider} value={provider}>
+                                      {formatSportsSourceProviderLabel(provider)}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div className="space-y-1.5">
+                              <Label htmlFor="sports-source-event-id">{t('Event ID')}</Label>
+                              <Input
+                                id="sports-source-event-id"
+                                value={sportsForm.sourceEventId}
+                                onChange={event => handleSportsFieldChange('sourceEventId', event.target.value)}
+                              />
+                            </div>
+                            <div className="space-y-1.5">
+                              <Label htmlFor="sports-source-game-id">{t('Game ID')}</Label>
+                              <Input
+                                id="sports-source-game-id"
+                                value={sportsForm.sourceGameId}
+                                onChange={event => handleSportsFieldChange('sourceGameId', event.target.value)}
+                              />
+                            </div>
+                            <div className="space-y-1.5">
+                              <Label htmlFor="sports-source-league-id">{t('League ID')}</Label>
+                              <Input
+                                id="sports-source-league-id"
+                                value={sportsForm.sourceLeagueId}
+                                onChange={event => handleSportsFieldChange('sourceLeagueId', event.target.value)}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      </details>
 
                       {sportsForm.section === 'games' && (
                         <>

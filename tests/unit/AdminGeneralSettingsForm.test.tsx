@@ -103,6 +103,10 @@ describe('adminGeneralSettingsForm', () => {
           isModelSelectEnabled: false,
           modelOptions: [],
         }}
+        sportsSourceSettings={{
+          isPandaScoreTokenConfigured: false,
+          isTheSportsDbApiKeyConfigured: false,
+        }}
       />,
     )
 
@@ -160,6 +164,10 @@ describe('adminGeneralSettingsForm', () => {
           isApiKeyConfigured: false,
           isModelSelectEnabled: false,
           modelOptions: [],
+        }}
+        sportsSourceSettings={{
+          isPandaScoreTokenConfigured: false,
+          isTheSportsDbApiKeyConfigured: false,
         }}
       />,
     )

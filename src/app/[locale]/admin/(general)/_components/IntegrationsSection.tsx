@@ -51,6 +51,12 @@ interface IntegrationsSectionProps {
   trimmedOpenRouterApiKey: string
   onRefreshOpenRouterModels: () => void
   initialOpenRouterApiKeyConfigured: boolean
+  pandaScoreToken: string
+  onPandaScoreTokenChange: (value: string) => void
+  initialPandaScoreTokenConfigured: boolean
+  theSportsDbApiKey: string
+  onTheSportsDbApiKeyChange: (value: string) => void
+  initialTheSportsDbApiKeyConfigured: boolean
   lifiIntegrator: string
   onLifiIntegratorChange: (value: string) => void
   lifiApiKey: string
@@ -88,6 +94,12 @@ function IntegrationsSection({
   trimmedOpenRouterApiKey,
   onRefreshOpenRouterModels,
   initialOpenRouterApiKeyConfigured,
+  pandaScoreToken,
+  onPandaScoreTokenChange,
+  initialPandaScoreTokenConfigured,
+  theSportsDbApiKey,
+  onTheSportsDbApiKeyChange,
+  initialTheSportsDbApiKeyConfigured,
   lifiIntegrator,
   onLifiIntegratorChange,
   lifiApiKey,
@@ -101,6 +113,8 @@ function IntegrationsSection({
   customJavascriptCodeDisablePageOptions,
 }: IntegrationsSectionProps) {
   const t = useExtracted()
+  const trimmedPandaScoreToken = pandaScoreToken.trim()
+  const trimmedTheSportsDbApiKey = theSportsDbApiKey.trim()
 
   return (
     <SettingsAccordionSection
@@ -227,6 +241,77 @@ function IntegrationsSection({
                 )
               : null}
           </div>
+        </div>
+
+        <div className="grid gap-4 border-t border-border/50 pt-6 md:grid-cols-2">
+          <div className="grid gap-2 md:col-span-2">
+            <h4 className="text-sm font-medium">{t('Sports data providers')}</h4>
+          </div>
+
+          <div className="grid gap-2">
+            <Label htmlFor="sports-thesportsdb-key">{t('TheSportsDB API key')}</Label>
+            <Input
+              id="sports-thesportsdb-key"
+              name="sports_thesportsdb_api_key"
+              type="password"
+              autoComplete="off"
+              maxLength={512}
+              value={theSportsDbApiKey}
+              onChange={event => onTheSportsDbApiKeyChange(event.target.value)}
+              disabled={isPending}
+              placeholder={
+                initialTheSportsDbApiKeyConfigured && !trimmedTheSportsDbApiKey
+                  ? '••••••••••••••••'
+                  : t('Optional')
+              }
+            />
+            <p className="text-xs text-muted-foreground">
+              {t('Get a key at')}
+              {' '}
+              <a
+                href="https://www.thesportsdb.com/api.php"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline underline-offset-2"
+              >
+                thesportsdb.com/api.php
+              </a>
+              .
+            </p>
+          </div>
+
+          <div className="grid gap-2">
+            <Label htmlFor="sports-pandascore-token">{t('PandaScore token')}</Label>
+            <Input
+              id="sports-pandascore-token"
+              name="sports_pandascore_token"
+              type="password"
+              autoComplete="off"
+              maxLength={512}
+              value={pandaScoreToken}
+              onChange={event => onPandaScoreTokenChange(event.target.value)}
+              disabled={isPending}
+              placeholder={
+                initialPandaScoreTokenConfigured && !trimmedPandaScoreToken
+                  ? '••••••••••••••••'
+                  : t('Optional')
+              }
+            />
+            <p className="text-xs text-muted-foreground">
+              {t('Get a token at')}
+              {' '}
+              <a
+                href="https://www.pandascore.co"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline underline-offset-2"
+              >
+                pandascore.co
+              </a>
+              .
+            </p>
+          </div>
+
         </div>
 
         <div className="grid gap-4 border-t border-border/50 pt-6 md:grid-cols-2">

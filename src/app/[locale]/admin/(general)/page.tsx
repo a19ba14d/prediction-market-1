@@ -10,6 +10,7 @@ import { SettingsRepository } from '@/lib/db/queries/settings'
 import { getBlockedCountriesFromSettings } from '@/lib/geoblock-settings'
 import { getGlobalAnnouncementSettingsFromSettings } from '@/lib/global-announcement-settings'
 import { getHomeFeaturedSettingsFromSettings } from '@/lib/home-featured-settings'
+import { parseSportsSourceProviderSettings } from '@/lib/sports-source/settings'
 import { getPublicAssetUrl } from '@/lib/storage'
 import { getTermsOfServicePdfPath, getTermsOfServicePdfUrl } from '@/lib/terms-of-service'
 import { getThemeSiteSettingsFormState } from '@/lib/theme-settings'
@@ -30,6 +31,7 @@ async function AdminGeneralSettingsContent({ locale }: { locale: string }) {
   const { data: allSettings } = await SettingsRepository.getSettings()
 
   const parsedMarketContextSettings = parseMarketContextSettings(allSettings ?? undefined)
+  const parsedSportsSourceSettings = parseSportsSourceProviderSettings(allSettings ?? undefined)
   const defaultOpenRouterModel = parsedMarketContextSettings.model ?? ''
   const apiKeyForModels = parsedMarketContextSettings.apiKey
   const isOpenRouterApiKeyConfigured = Boolean(apiKeyForModels)
@@ -89,6 +91,10 @@ async function AdminGeneralSettingsContent({ locale }: { locale: string }) {
         isModelSelectEnabled: isOpenRouterModelSelectEnabled,
         modelOptions: openRouterModelOptions,
         modelsError: openRouterModelsError,
+      }}
+      sportsSourceSettings={{
+        isPandaScoreTokenConfigured: Boolean(parsedSportsSourceSettings.pandascoreToken),
+        isTheSportsDbApiKeyConfigured: Boolean(parsedSportsSourceSettings.theSportsDbApiKey),
       }}
     />
   )

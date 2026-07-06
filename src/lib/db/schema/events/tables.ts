@@ -416,9 +416,26 @@ export const event_sports = pgTable(
     sports_tags: jsonb(),
     sports_teams: jsonb(),
     sports_team_logo_urls: jsonb(),
+    sports_source_provider: text(),
+    sports_source_event_id: text(),
+    sports_source_game_id: text(),
+    sports_source_league_id: text(),
+    sports_source_league_label: text(),
+    sports_source_match_confidence: numeric({ precision: 6, scale: 4 }),
+    sports_source_payload: jsonb(),
+    sports_source_selected_at: timestamp({ withTimezone: true }),
     created_at: timestamp({ withTimezone: true }).defaultNow().notNull(),
     updated_at: timestamp({ withTimezone: true }).defaultNow().notNull(),
   },
+  table => ({
+    sourceConfidenceCheck: check(
+      'event_sports_source_match_confidence_range',
+      sql`${table.sports_source_match_confidence} IS NULL OR (${table.sports_source_match_confidence} >= 0 AND ${table.sports_source_match_confidence} <= 1)`,
+    ),
+    sourceEventIdx: index('idx_event_sports_source_event').on(table.sports_source_provider, table.sports_source_event_id),
+    sourceGameIdx: index('idx_event_sports_source_game').on(table.sports_source_provider, table.sports_source_game_id),
+    sourceLeagueIdx: index('idx_event_sports_source_league').on(table.sports_source_provider, table.sports_source_league_id),
+  }),
 )
 
 export const market_sports = pgTable(
@@ -442,9 +459,26 @@ export const market_sports = pgTable(
     sports_event_slug: text(),
     sports_teams: jsonb(),
     sports_team_logo_urls: jsonb(),
+    sports_source_provider: text(),
+    sports_source_event_id: text(),
+    sports_source_game_id: text(),
+    sports_source_league_id: text(),
+    sports_source_league_label: text(),
+    sports_source_market_id: text(),
+    sports_source_match_confidence: numeric({ precision: 6, scale: 4 }),
+    sports_source_payload: jsonb(),
     created_at: timestamp({ withTimezone: true }).defaultNow().notNull(),
     updated_at: timestamp({ withTimezone: true }).defaultNow().notNull(),
   },
+  table => ({
+    sourceConfidenceCheck: check(
+      'market_sports_source_match_confidence_range',
+      sql`${table.sports_source_match_confidence} IS NULL OR (${table.sports_source_match_confidence} >= 0 AND ${table.sports_source_match_confidence} <= 1)`,
+    ),
+    sourceEventIdx: index('idx_market_sports_source_event').on(table.sports_source_provider, table.sports_source_event_id),
+    sourceGameIdx: index('idx_market_sports_source_game').on(table.sports_source_provider, table.sports_source_game_id),
+    sourceLeagueIdx: index('idx_market_sports_source_league').on(table.sports_source_provider, table.sports_source_league_id),
+  }),
 )
 
 export const sports_menu_items = pgTable(

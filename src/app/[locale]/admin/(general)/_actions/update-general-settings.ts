@@ -171,6 +171,15 @@ async function revalidateGeneralSettingsPaths() {
   }
 }
 
+async function runOptionalGeneralSettingsTask(label: string, task: () => Promise<void>) {
+  try {
+    await task()
+  }
+  catch (error) {
+    console.error(`Failed to ${label}`, error)
+  }
+}
+
 async function syncGeoblockSettings() {
   const { geoblockUrl } = resolvePublicRuntimeEnv(process.env)
   const response = await fetch(geoblockUrl, {
@@ -205,7 +214,7 @@ async function resolveCurrentLocale(): Promise<SupportedLocale> {
   }
 }
 
-export async function updateGeneralSettingsAction(
+async function updateGeneralSettingsActionImpl(
   _prevState: GeneralSettingsActionState,
   formData: FormData,
 ): Promise<GeneralSettingsActionState> {
@@ -244,6 +253,8 @@ export async function updateGeneralSettingsAction(
   const lifiApiKeyRaw = formData.get('lifi_api_key')
   const openRouterModelRaw = formData.get('openrouter_model')
   const openRouterApiKeyRaw = formData.get('openrouter_api_key')
+  const sportsPandaScoreTokenRaw = formData.get('sports_pandascore_token')
+  const sportsTheSportsDbApiKeyRaw = formData.get('sports_thesportsdb_api_key')
   const blockedCountriesRaw = formData.get('blocked_countries')
   const homeFeaturedEnabledRaw = formData.get('home_featured_enabled')
   const homeFeaturedUseAiRaw = formData.get('home_featured_use_ai')
@@ -294,6 +305,8 @@ export async function updateGeneralSettingsAction(
   const lifiApiKey = typeof lifiApiKeyRaw === 'string' ? lifiApiKeyRaw : ''
   const openRouterModel = typeof openRouterModelRaw === 'string' ? openRouterModelRaw.trim() : ''
   const openRouterApiKey = typeof openRouterApiKeyRaw === 'string' ? openRouterApiKeyRaw.trim() : ''
+  const sportsPandaScoreToken = typeof sportsPandaScoreTokenRaw === 'string' ? sportsPandaScoreTokenRaw.trim() : ''
+  const sportsTheSportsDbApiKey = typeof sportsTheSportsDbApiKeyRaw === 'string' ? sportsTheSportsDbApiKeyRaw.trim() : ''
   const blockedCountriesInput = typeof blockedCountriesRaw === 'string' ? blockedCountriesRaw : ''
   const homeFeaturedEventsJson = typeof homeFeaturedEventsJsonRaw === 'string' ? homeFeaturedEventsJsonRaw : ''
 
@@ -303,6 +316,12 @@ export async function updateGeneralSettingsAction(
 
   if (openRouterApiKey.length > 256) {
     return { error: 'OpenRouter API key is too long.' }
+  }
+  if (sportsPandaScoreToken.length > 512) {
+    return { error: 'PandaScore token is too long.' }
+  }
+  if (sportsTheSportsDbApiKey.length > 512) {
+    return { error: 'TheSportsDB API key is too long.' }
   }
 
   const validatedGlobalAnnouncement = validateGlobalAnnouncementInput({
@@ -431,6 +450,8 @@ export async function updateGeneralSettingsAction(
 
   let encryptedLiFiApiKey = ''
   let encryptedOpenRouterApiKey = ''
+  let encryptedSportsPandaScoreToken = ''
+  let encryptedSportsTheSportsDbApiKey = ''
   try {
     const { data: allSettings, error: settingsError } = await SettingsRepository.getSettings()
     if (settingsError) {
@@ -439,12 +460,20 @@ export async function updateGeneralSettingsAction(
 
     const existingEncryptedLiFiApiKey = allSettings?.general?.lifi_api_key?.value ?? ''
     const existingEncryptedOpenRouterApiKey = allSettings?.ai?.openrouter_api_key?.value ?? ''
+    const existingEncryptedSportsPandaScoreToken = allSettings?.ai?.sports_pandascore_token?.value ?? ''
+    const existingEncryptedSportsTheSportsDbApiKey = allSettings?.ai?.sports_thesportsdb_api_key?.value ?? ''
     encryptedLiFiApiKey = validated.data.lifiApiKeyValue
       ? encryptSecret(validated.data.lifiApiKeyValue)
       : existingEncryptedLiFiApiKey
     encryptedOpenRouterApiKey = openRouterApiKey
       ? encryptSecret(openRouterApiKey)
       : existingEncryptedOpenRouterApiKey
+    encryptedSportsPandaScoreToken = sportsPandaScoreToken
+      ? encryptSecret(sportsPandaScoreToken)
+      : existingEncryptedSportsPandaScoreToken
+    encryptedSportsTheSportsDbApiKey = sportsTheSportsDbApiKey
+      ? encryptSecret(sportsTheSportsDbApiKey)
+      : existingEncryptedSportsTheSportsDbApiKey
   }
   catch (error) {
     console.error('Failed to encrypt API keys', error)
@@ -479,6 +508,8 @@ export async function updateGeneralSettingsAction(
     { group: 'general', key: 'lifi_api_key', value: encryptedLiFiApiKey },
     { group: 'ai', key: 'openrouter_model', value: openRouterModel },
     { group: 'ai', key: 'openrouter_api_key', value: encryptedOpenRouterApiKey },
+    { group: 'ai', key: 'sports_pandascore_token', value: encryptedSportsPandaScoreToken },
+    { group: 'ai', key: 'sports_thesportsdb_api_key', value: encryptedSportsTheSportsDbApiKey },
     ...(validatedHomeFeaturedData ? buildHomeFeaturedSettingsUpdateRows(validatedHomeFeaturedData) : []),
   ]
 
@@ -501,19 +532,21 @@ export async function updateGeneralSettingsAction(
   }
 
   if (validatedHomeFeaturedData?.useAi) {
-    const locale = await resolveCurrentLocale()
-    const { regenerateHomeFeaturedEvents } = await import('@/lib/home-featured-ai')
-    const regenerateResult = await regenerateHomeFeaturedEvents(locale, {
-      settings: validatedHomeFeaturedData,
+    await runOptionalGeneralSettingsTask('regenerate featured markets', async () => {
+      const locale = await resolveCurrentLocale()
+      const { regenerateHomeFeaturedEvents } = await import('@/lib/home-featured-ai')
+      const regenerateResult = await regenerateHomeFeaturedEvents(locale, {
+        settings: validatedHomeFeaturedData,
+      })
+      if (regenerateResult.error) {
+        console.warn('Featured markets were saved, but automatic regeneration failed:', regenerateResult.error)
+      }
     })
-    if (regenerateResult.error) {
-      console.warn('Featured markets were saved, but automatic regeneration failed:', regenerateResult.error)
-    }
   }
 
-  await revalidateGeneralSettingsPaths()
+  await runOptionalGeneralSettingsTask('revalidate general settings paths', revalidateGeneralSettingsPaths)
 
-  await reportOperatorDomainSnapshot()
+  await runOptionalGeneralSettingsTask('report operator domain snapshot', reportOperatorDomainSnapshot)
 
   try {
     await syncGeoblockSettings()
@@ -524,6 +557,19 @@ export async function updateGeneralSettingsAction(
   }
 
   return { error: null }
+}
+
+export async function updateGeneralSettingsAction(
+  _prevState: GeneralSettingsActionState,
+  formData: FormData,
+): Promise<GeneralSettingsActionState> {
+  try {
+    return await updateGeneralSettingsActionImpl(_prevState, formData)
+  }
+  catch (error) {
+    console.error('Failed to update general settings', error)
+    return { error: DEFAULT_ERROR_MESSAGE }
+  }
 }
 
 export async function removeTermsOfServicePdfAction(): Promise<GeneralSettingsActionState> {
@@ -540,7 +586,7 @@ export async function removeTermsOfServicePdfAction(): Promise<GeneralSettingsAc
     return { error: DEFAULT_ERROR_MESSAGE }
   }
 
-  await revalidateGeneralSettingsPaths()
+  await runOptionalGeneralSettingsTask('revalidate general settings paths', revalidateGeneralSettingsPaths)
 
   return { error: null }
 }

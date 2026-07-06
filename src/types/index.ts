@@ -33,6 +33,12 @@ export interface Event {
   sports_tags?: string[] | null
   sports_teams?: SportsTeam[] | null
   sports_team_logo_urls?: string[] | null
+  sports_source_provider?: string | null
+  sports_source_event_id?: string | null
+  sports_source_game_id?: string | null
+  sports_source_league_id?: string | null
+  sports_source_league_label?: string | null
+  sports_source_match_confidence?: string | null
   has_live_chart?: boolean
   active_markets_count: number
   total_markets_count: number

@@ -168,6 +168,44 @@ import { buildStepErrors } from './admin-create-event-form-validation'
 
 const UMA_RESOLUTION_TEMPORARILY_DISABLED = true
 
+interface SportsMatchCandidate {
+  provider: string
+  eventId: string
+  gameId: string | null
+  leagueId: string | null
+  leagueName: string | null
+  leagueSlug: string | null
+  sportSlug: string | null
+  startTime: string | null
+  homeTeam: { name: string, abbreviation?: string | null } | null
+  awayTeam: { name: string, abbreviation?: string | null } | null
+  score: string | null
+  live: boolean | null
+  ended: boolean | null
+  livestreamUrl: string | null
+  confidence: number
+  matchReason: string[]
+}
+
+function formatSportsSearchDate(value: string | null | undefined) {
+  const normalized = value?.trim()
+  if (!normalized) {
+    return null
+  }
+
+  const localDateMatch = normalized.match(/^(\d{4}-\d{2}-\d{2})/)
+  if (localDateMatch?.[1]) {
+    return localDateMatch[1]
+  }
+
+  const parsed = new Date(normalized)
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString().slice(0, 10)
+}
+
+function resolveSportsSearchCategory(mainCategorySlug: string) {
+  return mainCategorySlug.trim().toLowerCase() === 'esports' ? 'esports' : 'sports'
+}
+
 export function useAdminCreateEventForm({
   sportsSlugCatalog,
   creationMode,
@@ -249,6 +287,12 @@ export function useAdminCreateEventForm({
   const [signers, setSigners] = useState<SignerOption[]>([])
   const [isLoadingSigners, setIsLoadingSigners] = useState(false)
   const [sportsForm, setSportsForm] = useState<AdminSportsFormState>(() => createInitialAdminSportsForm())
+  const [sportsMatchQuery, setSportsMatchQuery] = useState('')
+  const [sportsMatchCandidates, setSportsMatchCandidates] = useState<SportsMatchCandidate[]>([])
+  const [selectedSportsMatch, setSelectedSportsMatch] = useState<SportsMatchCandidate | null>(null)
+  const [isSearchingSportsMatches, setIsSearchingSportsMatches] = useState(false)
+  const [sportsMatchError, setSportsMatchError] = useState('')
+  const sportsMatchSearchControllerRef = useRef<AbortController | null>(null)
   const [mainCategories, setMainCategories] = useState<MainCategory[]>([])
   const [globalCategories, setGlobalCategories] = useState<CategorySuggestion[]>([])
   const [categoryQuery, setCategoryQuery] = useState('')
@@ -1731,6 +1775,13 @@ export function useAdminCreateEventForm({
             startTime: typeof parsed.sportsForm.startTime === 'string'
               ? normalizeDateTimeLocalValue(parsed.sportsForm.startTime)
               : fallbackSports.startTime,
+            sourceProvider: typeof parsed.sportsForm.sourceProvider === 'string' ? parsed.sportsForm.sourceProvider : fallbackSports.sourceProvider,
+            sourceEventId: typeof parsed.sportsForm.sourceEventId === 'string' ? parsed.sportsForm.sourceEventId : fallbackSports.sourceEventId,
+            sourceGameId: typeof parsed.sportsForm.sourceGameId === 'string' ? parsed.sportsForm.sourceGameId : fallbackSports.sourceGameId,
+            sourceLeagueId: typeof parsed.sportsForm.sourceLeagueId === 'string' ? parsed.sportsForm.sourceLeagueId : fallbackSports.sourceLeagueId,
+            sourceLeagueLabel: typeof parsed.sportsForm.sourceLeagueLabel === 'string' ? parsed.sportsForm.sourceLeagueLabel : fallbackSports.sourceLeagueLabel,
+            sourceMatchConfidence: typeof parsed.sportsForm.sourceMatchConfidence === 'string' ? parsed.sportsForm.sourceMatchConfidence : fallbackSports.sourceMatchConfidence,
+            livestreamUrl: typeof parsed.sportsForm.livestreamUrl === 'string' ? parsed.sportsForm.livestreamUrl : fallbackSports.livestreamUrl,
             includeDraw: Boolean(parsed.sportsForm.includeDraw),
             includeBothTeamsToScore: parsed.sportsForm.includeBothTeamsToScore !== false,
             includeSpreads: parsed.sportsForm.includeSpreads !== false,
@@ -2124,6 +2175,124 @@ export function useAdminCreateEventForm({
         : team) as AdminSportsFormState['teams'],
     }))
   }, [])
+
+  const applySportsMatchCandidate = useCallback((candidate: SportsMatchCandidate) => {
+    setSelectedSportsMatch(candidate)
+    setSportsForm((prev) => {
+      const nextStartTime = candidate.startTime
+        ? formatDateTimeLocalValue(new Date(candidate.startTime))
+        : prev.startTime
+
+      return {
+        ...prev,
+        section: prev.section || 'games',
+        sportSlug: candidate.sportSlug || prev.sportSlug,
+        leagueSlug: candidate.leagueSlug || prev.leagueSlug,
+        startTime: nextStartTime,
+        sourceProvider: candidate.provider,
+        sourceEventId: candidate.eventId,
+        sourceGameId: candidate.gameId ?? '',
+        sourceLeagueId: candidate.leagueId ?? '',
+        sourceLeagueLabel: candidate.leagueName ?? '',
+        sourceMatchConfidence: String(candidate.confidence ?? ''),
+        livestreamUrl: candidate.livestreamUrl ?? prev.livestreamUrl,
+        teams: [
+          {
+            ...prev.teams[0],
+            name: candidate.homeTeam?.name || prev.teams[0].name,
+            abbreviation: candidate.homeTeam?.abbreviation || prev.teams[0].abbreviation,
+          },
+          {
+            ...prev.teams[1],
+            name: candidate.awayTeam?.name || prev.teams[1].name,
+            abbreviation: candidate.awayTeam?.abbreviation || prev.teams[1].abbreviation,
+          },
+        ],
+      }
+    })
+  }, [])
+
+  const clearSportsMatchCandidate = useCallback(() => {
+    setSelectedSportsMatch(null)
+    setSportsForm(prev => ({
+      ...prev,
+      sourceProvider: '',
+      sourceEventId: '',
+      sourceGameId: '',
+      sourceLeagueId: '',
+      sourceLeagueLabel: '',
+      sourceMatchConfidence: '',
+      livestreamUrl: '',
+    }))
+  }, [])
+
+  const searchSportsMatches = useCallback(async () => {
+    const query = sportsMatchQuery.trim() || form.title.trim()
+    if (!query) {
+      setSportsMatchError(t('Enter a match search first.'))
+      return
+    }
+
+    sportsMatchSearchControllerRef.current?.abort()
+    const controller = new AbortController()
+    sportsMatchSearchControllerRef.current = controller
+
+    try {
+      setIsSearchingSportsMatches(true)
+      setSportsMatchError('')
+      const params = new URLSearchParams()
+      params.set('q', query)
+      params.set('limit', '8')
+      params.set('category', resolveSportsSearchCategory(form.mainCategorySlug))
+      if (sportsForm.sportSlug.trim()) {
+        params.set('sport', sportsForm.sportSlug.trim())
+      }
+      if (sportsForm.leagueSlug.trim()) {
+        params.set('league', sportsForm.leagueSlug.trim())
+      }
+      const derivedEventDate = buildAdminSportsDerivedContent({
+        baseSlug: baseEventSlug,
+        sports: sportsForm,
+      }).payload?.eventDate
+      const eventDate = derivedEventDate ?? formatSportsSearchDate(form.endDateIso)
+      if (eventDate) {
+        params.set('date', eventDate)
+      }
+
+      const response = await fetchAdminApi(`/sports/events/search?${params.toString()}`, {
+        method: 'GET',
+        cache: 'no-store',
+        signal: controller.signal,
+      })
+      if (sportsMatchSearchControllerRef.current !== controller) {
+        return
+      }
+      if (!response.ok) {
+        const { payload, text } = await readResponseBody(response)
+        setSportsMatchError(readResponseErrorMessage(payload, text) || t('Could not search sports matches.'))
+        return
+      }
+
+      const payload = await response.json().catch(() => null) as { candidates?: SportsMatchCandidate[] } | null
+      if (sportsMatchSearchControllerRef.current !== controller) {
+        return
+      }
+      setSportsMatchCandidates(Array.isArray(payload?.candidates) ? payload.candidates : [])
+    }
+    catch (error) {
+      if (controller.signal.aborted) {
+        return
+      }
+      console.error('Failed to search sports matches', error)
+      setSportsMatchError(t('Could not search sports matches.'))
+    }
+    finally {
+      if (sportsMatchSearchControllerRef.current === controller) {
+        sportsMatchSearchControllerRef.current = null
+        setIsSearchingSportsMatches(false)
+      }
+    }
+  }, [baseEventSlug, form.endDateIso, form.mainCategorySlug, form.title, sportsForm, sportsMatchQuery, t])
 
   function handleSportsTeamLogoUpload(hostStatus: AdminSportsTeamHostStatus, event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0] ?? null
@@ -4680,6 +4849,12 @@ export function useAdminCreateEventForm({
     signers,
     isLoadingSigners,
     sportsForm,
+    sportsMatchQuery,
+    setSportsMatchQuery,
+    sportsMatchCandidates,
+    selectedSportsMatch,
+    isSearchingSportsMatches,
+    sportsMatchError,
     mainCategories,
     categoryQuery,
     setCategoryQuery,
@@ -4821,6 +4996,9 @@ export function useAdminCreateEventForm({
     isStepValid,
     handleSportsFieldChange,
     handleSportsTeamChange,
+    applySportsMatchCandidate,
+    clearSportsMatchCandidate,
+    searchSportsMatches,
     handleSportsTeamLogoUpload,
     handleSportsPropChange,
     handleSportSlugSelectChange,
