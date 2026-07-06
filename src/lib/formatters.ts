@@ -28,6 +28,80 @@ const USD_FORMATTER_CACHE = new Map<string, Intl.NumberFormat>([
   ['2-2', usdFormatter],
 ])
 
+const MICRO_DECIMALS = 6
+const MAX_TO_MICRO_INPUT_LENGTH = 120
+const MAX_TO_MICRO_DIGITS = 78
+
+function parseBoundedExponent(value: string) {
+  const sign = value.startsWith('-') ? '-' : ''
+  const digits = value.replace(/^[+-]/, '').replace(/^0+/, '') || '0'
+  if (digits.length > String(MAX_TO_MICRO_DIGITS).length) {
+    return null
+  }
+
+  const exponent = Number.parseInt(`${sign}${digits}`, 10)
+  if (!Number.isSafeInteger(exponent) || Math.abs(exponent) > MAX_TO_MICRO_DIGITS) {
+    return null
+  }
+
+  return exponent
+}
+
+function roundDecimalToMicroUnits(value: string) {
+  const normalized = value.trim()
+  if (normalized.length > MAX_TO_MICRO_INPUT_LENGTH) {
+    return null
+  }
+
+  const match = normalized.match(/^([+-]?)(?:(\d+)(?:\.(\d*))?|\.(\d+))(?:e([+-]?\d+))?$/i)
+  if (!match) {
+    return null
+  }
+
+  const [, sign, whole = '0', fraction = '', leadingFraction = '', exponentRaw] = match
+  const fractionDigits = fraction || leadingFraction
+  const exponent = exponentRaw ? parseBoundedExponent(exponentRaw) : 0
+  if (exponent === null) {
+    return null
+  }
+
+  const digits = `${whole || '0'}${fractionDigits}`.replace(/^0+/, '') || '0'
+  if (digits === '0') {
+    return 0n
+  }
+
+  const scale = exponent + MICRO_DECIMALS - fractionDigits.length
+  if (scale >= 0) {
+    if (digits.length + scale > MAX_TO_MICRO_DIGITS) {
+      return null
+    }
+
+    const microUnits = BigInt(digits) * 10n ** BigInt(scale)
+    return sign === '-' ? -microUnits : microUnits
+  }
+
+  const divisorExponent = Math.abs(scale)
+  if (divisorExponent > digits.length + 1) {
+    return 0n
+  }
+
+  const integer = BigInt(digits)
+  const divisor = 10n ** BigInt(divisorExponent)
+  const quotient = integer / divisor
+  const remainder = integer % divisor
+  let microUnits = quotient
+
+  if (remainder * 2n >= divisor) {
+    microUnits += 1n
+  }
+
+  if (microUnits.toString().length > MAX_TO_MICRO_DIGITS) {
+    return null
+  }
+
+  return sign === '-' ? -microUnits : microUnits
+}
+
 function getSharesFormatter(min: number, max: number) {
   const key = `${min}-${max}`
   const cached = SHARES_FORMATTER_CACHE.get(key)
@@ -397,11 +471,11 @@ export function toCents(value?: string | number | null) {
 }
 
 export function toMicro(amount: string | number): string {
-  const numeric = Number(amount)
-  if (!Number.isFinite(numeric)) {
+  if (typeof amount === 'number' && !Number.isFinite(amount)) {
     return '0'
   }
-  return Math.round(numeric * MICRO_UNIT).toString()
+
+  return roundDecimalToMicroUnits(String(amount))?.toString() ?? '0'
 }
 
 export function fromMicro(amount: string | number, precision: number = 1): string {
