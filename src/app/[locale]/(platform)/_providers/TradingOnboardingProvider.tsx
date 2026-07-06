@@ -6,7 +6,7 @@ import type { CommunityProfile } from '@/lib/community-profile'
 import type { User } from '@/types'
 import { useExtracted } from 'next-intl'
 import { usePathname } from 'next/navigation'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import { createPublicClient, erc20Abi, erc1155Abi, http } from 'viem'
 import { useSignMessage, useSignTypedData } from 'wagmi'
 import { markApprovalStateWithoutTransactionAction } from '@/app/[locale]/(platform)/_actions/approve-tokens'
@@ -347,6 +347,20 @@ function openFundModalAfterTradingReady({
   }
 }
 
+function TradingAuthRoutePromptSync({
+  onRoutePromptChange,
+}: {
+  onRoutePromptChange: (allowTradingAuthPrompt: boolean) => void
+}) {
+  const pathname = usePathname()
+
+  useEffect(function syncRouteTradingAuthPrompt() {
+    onRoutePromptChange(pathname.includes('/event/'))
+  }, [onRoutePromptChange, pathname])
+
+  return null
+}
+
 function TradingOnboardingProviderContent({
   children,
   user,
@@ -369,6 +383,7 @@ function TradingOnboardingProviderContent({
   const [autoRedeemStep, setAutoRedeemStep] = useState<ApprovalsStep>('idle')
   const [requiresTradingAuthRefresh, setRequiresTradingAuthRefresh] = useState(false)
   const [shouldContinueTradingAuthPrompt, setShouldContinueTradingAuthPrompt] = useState(false)
+  const [allowsRouteTradingAuthPrompt, setAllowsRouteTradingAuthPrompt] = useState(false)
   const [communityUsernameHint, setCommunityUsernameHint] = useState<{
     address: string
     username: string
@@ -379,7 +394,6 @@ function TradingOnboardingProviderContent({
   const t = useExtracted()
   const signatureRejectedMessage = t('You rejected the signature request.')
   const walletConnectorReconnectMessage = t('Your wallet connection expired. Reconnect your wallet and try again.')
-  const pathname = usePathname()
   const affiliateMetadata = useAffiliateOrderMetadata()
   const { open: openAppKit } = useAppKit()
   const refreshSessionUserState = useSessionRefresher()
@@ -471,10 +485,9 @@ function TradingOnboardingProviderContent({
     hasDepositWalletAddress: status.hasDepositWalletAddress,
   })
 
-  const isEventRoute = pathname.includes('/event/')
   const nextModal = resolveNextOnboardingModal({
     ...status,
-    allowTradingAuthPrompt: isEventRoute,
+    allowTradingAuthPrompt: allowsRouteTradingAuthPrompt,
   })
 
   useEffect(function syncNextOnboardingModal() {
@@ -530,7 +543,7 @@ function TradingOnboardingProviderContent({
 
     const allowTradingAuthPrompt = Boolean(options?.allowTradingAuthPrompt)
       || Boolean(options?.forceTradingAuth)
-      || isEventRoute
+      || allowsRouteTradingAuthPrompt
     setShouldContinueTradingAuthPrompt(allowTradingAuthPrompt)
 
     const forcedStatus = options?.forceTradingAuth
@@ -541,7 +554,7 @@ function TradingOnboardingProviderContent({
       allowTradingAuthPrompt,
     })
     setActiveModal(modal)
-  }, [isEventRoute, openAppKit, refreshSessionUserState, status, user])
+  }, [allowsRouteTradingAuthPrompt, openAppKit, refreshSessionUserState, status, user])
 
   const openFundModalIfBalanceEmpty = useCallback(async () => {
     if (!user?.deposit_wallet_address) {
@@ -676,7 +689,7 @@ function TradingOnboardingProviderContent({
       })
       void refreshSessionUserState()
       setDismissedModal(null)
-      const allowTradingAuthPrompt = shouldContinueTradingAuthPrompt || isEventRoute
+      const allowTradingAuthPrompt = shouldContinueTradingAuthPrompt || allowsRouteTradingAuthPrompt
       const nextModal = status.needsEmail
         ? 'email'
         : resolveNextOnboardingModal({
@@ -707,7 +720,7 @@ function TradingOnboardingProviderContent({
     t,
     user?.address,
     user?.deposit_wallet_address,
-    isEventRoute,
+    allowsRouteTradingAuthPrompt,
   ])
 
   const handleEmailSubmit = useCallback(async (email: string) => {
@@ -735,7 +748,7 @@ function TradingOnboardingProviderContent({
       })
       void refreshSessionUserState()
       setDismissedModal(null)
-      const allowTradingAuthPrompt = shouldContinueTradingAuthPrompt || isEventRoute
+      const allowTradingAuthPrompt = shouldContinueTradingAuthPrompt || allowsRouteTradingAuthPrompt
       const nextModal = resolveNextOnboardingModal({
         ...status,
         needsEmail: false,
@@ -749,7 +762,7 @@ function TradingOnboardingProviderContent({
     finally {
       setIsEmailSubmitting(false)
     }
-  }, [isEmailSubmitting, refreshSessionUserState, shouldContinueTradingAuthPrompt, status, isEventRoute])
+  }, [allowsRouteTradingAuthPrompt, isEmailSubmitting, refreshSessionUserState, shouldContinueTradingAuthPrompt, status])
 
   const handleEmailSkip = useCallback(async () => {
     if (isEmailSubmitting) {
@@ -775,7 +788,7 @@ function TradingOnboardingProviderContent({
       })
       void refreshSessionUserState()
       setDismissedModal(null)
-      const allowTradingAuthPrompt = shouldContinueTradingAuthPrompt || isEventRoute
+      const allowTradingAuthPrompt = shouldContinueTradingAuthPrompt || allowsRouteTradingAuthPrompt
       const nextModal = resolveNextOnboardingModal({
         ...status,
         needsEmail: false,
@@ -789,7 +802,7 @@ function TradingOnboardingProviderContent({
     finally {
       setIsEmailSubmitting(false)
     }
-  }, [isEmailSubmitting, refreshSessionUserState, shouldContinueTradingAuthPrompt, status, isEventRoute])
+  }, [allowsRouteTradingAuthPrompt, isEmailSubmitting, refreshSessionUserState, shouldContinueTradingAuthPrompt, status])
 
   const enableTradingAuthForCurrentUser = useCallback(async () => {
     if (!user?.address) {
@@ -1379,6 +1392,10 @@ function TradingOnboardingProviderContent({
 
   return (
     <TradingOnboardingContext value={contextValue}>
+      <Suspense fallback={null}>
+        <TradingAuthRoutePromptSync onRoutePromptChange={setAllowsRouteTradingAuthPrompt} />
+      </Suspense>
+
       {children}
 
       <TradingOnboardingDialogs

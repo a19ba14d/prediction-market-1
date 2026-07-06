@@ -205,6 +205,27 @@ describe('tradingOnboardingProvider', () => {
     expect(screen.getByTestId('active-modal')).not.toHaveTextContent('enable-status')
   })
 
+  it('auto-prompts trading auth on event routes', async () => {
+    mocks.usePathname.mockReturnValue('/event/test-market')
+
+    useUser.setState(createUser({
+      deposit_wallet_address: '0xbc040c5a56d757986475005f8cde8e41fe3e2486',
+      deposit_wallet_status: 'deployed',
+      email: 'user@example.com',
+      username: 'user',
+    }))
+
+    render(
+      <TradingOnboardingProvider>
+        <div />
+      </TradingOnboardingProvider>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByTestId('active-modal')).toHaveTextContent('enable-status')
+    })
+  })
+
   it('opens AppKit instead of exposing wagmi connector errors during enable trading', async () => {
     mocks.createDepositWalletAction.mockResolvedValue({
       error: 'Enable trading to continue.',
