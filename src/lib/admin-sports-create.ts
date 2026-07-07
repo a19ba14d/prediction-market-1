@@ -1022,6 +1022,8 @@ export function buildAdminSportsDerivedContent(args: {
   const eventSlug = buildSportsEventSlug(args.baseSlug, effectiveEventVariant)
   const eventDate = isGamesSection ? buildEventDateFromStartTime(args.sports.startTime) : ''
   const startTimeIso = isGamesSection ? buildStartTimeIso(args.sports.startTime) : ''
+  const sportSlug = isGamesSection ? slugify(args.sports.sportSlug) : ''
+  const leagueSlug = isGamesSection ? slugify(args.sports.leagueSlug) : ''
   const options = buildSportsOptions(args.sports, eventDate)
   const variantSlug = args.sports.section && effectiveEventVariant
     ? buildSportVariantSlug(args.sports.section, effectiveEventVariant, options)
@@ -1046,7 +1048,7 @@ export function buildAdminSportsDerivedContent(args: {
       return null
     }
 
-    if (isGamesSection && !hasSourceIdentity && teams.some(team => !team.name)) {
+    if (isGamesSection && teams.some(team => !team.name)) {
       return null
     }
 
@@ -1119,7 +1121,7 @@ export function buildAdminSportsDerivedContent(args: {
       return null
     }
 
-    if (isGamesSection && !hasSourceIdentity && (!args.sports.sportSlug.trim() || !args.sports.leagueSlug.trim() || !eventDate || !startTimeIso)) {
+    if (isGamesSection && (!sportSlug || !leagueSlug || !eventDate || !startTimeIso)) {
       return null
     }
 
@@ -1139,11 +1141,11 @@ export function buildAdminSportsDerivedContent(args: {
     }
 
     if (isGamesSection) {
-      if (args.sports.sportSlug.trim()) {
-        payloadBase.sportSlug = slugify(args.sports.sportSlug)
+      if (sportSlug) {
+        payloadBase.sportSlug = sportSlug
       }
-      if (args.sports.leagueSlug.trim()) {
-        payloadBase.leagueSlug = slugify(args.sports.leagueSlug)
+      if (leagueSlug) {
+        payloadBase.leagueSlug = leagueSlug
       }
       if (eventDate) {
         payloadBase.eventDate = eventDate
@@ -1200,7 +1202,8 @@ export function buildAdminSportsStepErrors(args: {
   const homeName = normalizeText(homeTeam?.name ?? '')
   const awayName = normalizeText(awayTeam?.name ?? '')
   const sourceIdentity = resolveAdminSportsSourceIdentity(args.sports)
-  const hasSourceIdentity = sourceIdentity.isComplete
+  const sportSlug = args.sports.section === 'games' ? slugify(args.sports.sportSlug) : ''
+  const leagueSlug = args.sports.section === 'games' ? slugify(args.sports.leagueSlug) : ''
 
   if (args.step === 1) {
     if (!args.sports.section) {
@@ -1211,11 +1214,11 @@ export function buildAdminSportsStepErrors(args: {
       if (sourceIdentity.hasSourceId && !sourceIdentity.provider) {
         errors.push('Select a supported sports data provider for the source event or game ID.')
       }
-      else if (!hasSourceIdentity) {
-        if (!args.sports.sportSlug.trim()) {
+      else {
+        if (!sportSlug) {
           errors.push('Select a sports match or enter a sport slug.')
         }
-        if (!args.sports.leagueSlug.trim()) {
+        if (!leagueSlug) {
           errors.push('Select a sports match or enter a league slug.')
         }
         if (!args.sports.startTime.trim()) {
@@ -1257,14 +1260,14 @@ export function buildAdminSportsStepErrors(args: {
         (args.sports.eventVariant === 'more_markets'
           || args.sports.eventVariant === 'exact_score'
           || args.sports.eventVariant === 'halftime_result')
-        && slugify(args.sports.sportSlug) !== 'soccer'
+        && sportSlug !== 'soccer'
       ) {
         errors.push('More Markets, Exact Score, and Halftime Result currently require sport slug "soccer".')
       }
 
       if (
         args.sports.eventVariant !== 'custom'
-        && (!args.sports.sportSlug.trim() || !args.sports.leagueSlug.trim() || !eventDate || !homeName || !awayName)
+        && (!sportSlug || !leagueSlug || !eventDate || !homeName || !awayName)
       ) {
         errors.push('Generated sports templates require full game details.')
       }
