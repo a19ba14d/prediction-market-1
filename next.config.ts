@@ -15,7 +15,6 @@ const config: NextConfig = {
   reactStrictMode: false,
   reactCompiler: true,
   staticPageGenerationTimeout: 180,
-  deploymentId: commitSha,
   experimental: {
     serverActions: {
       bodySizeLimit: '2mb',
