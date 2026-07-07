@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   listHomeEventsPage: vi.fn(),
@@ -27,7 +27,13 @@ describe('homeContent', () => {
     mocks.listHomeEventsPage.mockReset()
   })
 
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
   it('uses the route main tag when fetching initial subcategory events', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-05-11T12:34:56.789Z'))
     mocks.listHomeEventsPage.mockResolvedValueOnce({ data: [], error: null })
 
     const HomeContent = (await import('@/app/[locale]/(platform)/(home)/_components/HomeContent')).default
@@ -41,7 +47,7 @@ describe('homeContent', () => {
       tag: 'ai',
       mainTag: 'tech',
       locale: 'en',
-      currentTimestamp: null,
+      currentTimestamp: Date.parse('2026-05-11T12:30:00.000Z'),
     }))
   })
 

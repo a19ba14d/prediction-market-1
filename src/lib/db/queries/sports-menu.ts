@@ -500,22 +500,32 @@ async function getFreshFuturesHref(vertical: SportsVertical): Promise<QueryResul
   })
 }
 
+async function withFreshSportsMenuRowsFallback<T>(
+  cachedQuery: () => Promise<QueryResult<T>>,
+  freshQuery: () => Promise<QueryResult<T>>,
+) {
+  try {
+    return await cachedQuery()
+  }
+  catch (error) {
+    if (isEmptySportsMenuRowsError(error)) {
+      return freshQuery()
+    }
+
+    throw error
+  }
+}
+
 export const SportsMenuRepository = {
   async getMenuEntries(vertical: SportsVertical = 'sports'): Promise<QueryResult<SportsMenuEntry[]>> {
     if (!hasDatabaseEnv()) {
       return buildQueryResult([])
     }
 
-    try {
-      return await getCachedMenuEntries(vertical)
-    }
-    catch (error) {
-      if (isEmptySportsMenuRowsError(error)) {
-        return getFreshMenuEntries(vertical)
-      }
-
-      throw error
-    }
+    return withFreshSportsMenuRowsFallback(
+      () => getCachedMenuEntries(vertical),
+      () => getFreshMenuEntries(vertical),
+    )
   },
 
   async getLayoutData(vertical: SportsVertical = 'sports'): Promise<QueryResult<SportsMenuLayoutData>> {
@@ -523,16 +533,10 @@ export const SportsMenuRepository = {
       return buildQueryResult(buildEmptySportsMenuLayoutData())
     }
 
-    try {
-      return await getCachedLayoutData(vertical)
-    }
-    catch (error) {
-      if (isEmptySportsMenuRowsError(error)) {
-        return getFreshLayoutData(vertical)
-      }
-
-      throw error
-    }
+    return withFreshSportsMenuRowsFallback(
+      () => getCachedLayoutData(vertical),
+      () => getFreshLayoutData(vertical),
+    )
   },
 
   async resolveCanonicalSlugByAlias(alias: string): Promise<QueryResult<string | null>> {
@@ -540,16 +544,10 @@ export const SportsMenuRepository = {
       return buildQueryResult(null)
     }
 
-    try {
-      return await getCachedCanonicalSlugByAlias(alias)
-    }
-    catch (error) {
-      if (isEmptySportsMenuRowsError(error)) {
-        return getFreshCanonicalSlugByAlias(alias)
-      }
-
-      throw error
-    }
+    return withFreshSportsMenuRowsFallback(
+      () => getCachedCanonicalSlugByAlias(alias),
+      () => getFreshCanonicalSlugByAlias(alias),
+    )
   },
 
   async getLandingHref(vertical: SportsVertical = 'sports'): Promise<QueryResult<string | null>> {
@@ -557,16 +555,10 @@ export const SportsMenuRepository = {
       return buildQueryResult(null)
     }
 
-    try {
-      return await getCachedLandingHref(vertical)
-    }
-    catch (error) {
-      if (isEmptySportsMenuRowsError(error)) {
-        return getFreshLandingHref(vertical)
-      }
-
-      throw error
-    }
+    return withFreshSportsMenuRowsFallback(
+      () => getCachedLandingHref(vertical),
+      () => getFreshLandingHref(vertical),
+    )
   },
 
   async getFuturesHref(vertical: SportsVertical = 'sports'): Promise<QueryResult<string | null>> {
@@ -574,15 +566,9 @@ export const SportsMenuRepository = {
       return buildQueryResult(null)
     }
 
-    try {
-      return await getCachedFuturesHref(vertical)
-    }
-    catch (error) {
-      if (isEmptySportsMenuRowsError(error)) {
-        return getFreshFuturesHref(vertical)
-      }
-
-      throw error
-    }
+    return withFreshSportsMenuRowsFallback(
+      () => getCachedFuturesHref(vertical),
+      () => getFreshFuturesHref(vertical),
+    )
   },
 }

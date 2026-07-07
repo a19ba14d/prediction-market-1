@@ -2,7 +2,10 @@ import type { SupportedLocale } from '@/i18n/locales'
 import type { Event, HomeFeaturedEventCard, HomeFeaturedHotTopic, HomeFeaturedSideCardSettings } from '@/types'
 import { cacheLife, cacheTag } from 'next/cache'
 import HomeClient from '@/app/[locale]/(platform)/(home)/_components/HomeClient'
-import { HOME_INITIAL_EVENTS_CACHE_LIFE } from '@/app/[locale]/(platform)/(home)/_utils/homeInitialEventsCache'
+import {
+  getHomeInitialCurrentTimestamp,
+  HOME_INITIAL_EVENTS_CACHE_LIFE,
+} from '@/app/[locale]/(platform)/(home)/_utils/homeInitialEventsCache'
 import { cacheTags } from '@/lib/cache-tags'
 import { listHomeEventsPage } from '@/lib/home-events-page'
 import { getHomeFeaturedSideCard, listHomeFeaturedEvents, listHomeFeaturedHotTopics } from '@/lib/home-featured-events'
@@ -18,7 +21,7 @@ interface HomeContentProps {
 
 export default async function HomeContent({
   locale,
-  currentTimestamp = null,
+  currentTimestamp,
   initialTag,
   initialMainTag,
 }: HomeContentProps) {
@@ -34,6 +37,7 @@ export default async function HomeContent({
   const initialMainTagSlug = initialMainTag ?? initialTagSlug
   const shouldLoadFeaturedEvents = initialTagSlug === 'trending' && initialMainTagSlug === 'trending'
   const initialSortBy = getInitialHomeEventsSortBy(initialTagSlug)
+  const resolvedCurrentTimestamp = currentTimestamp ?? getHomeInitialCurrentTimestamp()
   let initialCurrentTimestamp: number | null = null
 
   let initialEvents: Event[] = []
@@ -48,7 +52,7 @@ export default async function HomeContent({
     userId: '',
     bookmarked: false,
     locale: resolvedLocale,
-    currentTimestamp,
+    currentTimestamp: resolvedCurrentTimestamp,
     ...(initialSortBy && { sortBy: initialSortBy }),
   })
     .then(({ data: events, error, currentTimestamp: resolvedCurrentTimestamp }) => ({
