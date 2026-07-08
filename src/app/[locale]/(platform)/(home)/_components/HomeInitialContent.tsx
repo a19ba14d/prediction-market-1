@@ -12,8 +12,10 @@ interface HomeInitialContentProps {
 
 async function RuntimeHomeInitialContent(props: HomeInitialContentProps) {
   await deferPublicShellPrerenderIfNeeded()
-  const currentTimestamp = getHomeInitialCurrentTimestamp()
+  return renderHomeContent(props, getHomeInitialCurrentTimestamp())
+}
 
+function renderHomeContent(props: HomeInitialContentProps, currentTimestamp: number | null) {
   return (
     <HomeContent
       {...props}
@@ -27,18 +29,11 @@ export default async function HomeInitialContent({
   ...props
 }: HomeInitialContentProps) {
   if (shouldPrerenderPublicShell()) {
-    return <HomeContent {...props} />
+    return renderHomeContent(props, null)
   }
 
   if (!deferRuntimePrerender) {
-    const currentTimestamp = getHomeInitialCurrentTimestamp()
-
-    return (
-      <HomeContent
-        {...props}
-        currentTimestamp={currentTimestamp}
-      />
-    )
+    return renderHomeContent(props, getHomeInitialCurrentTimestamp())
   }
 
   return <RuntimeHomeInitialContent {...props} />

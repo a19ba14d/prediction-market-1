@@ -8,6 +8,9 @@ import {
 } from '@/app/[locale]/(platform)/event/[slug]/_components/comment-user'
 import EventCommentContent from '@/app/[locale]/(platform)/event/[slug]/_components/EventCommentContent'
 import { CommentPositionsIndicator } from '@/app/[locale]/(platform)/event/[slug]/_components/EventCommentPositionsIndicator'
+import {
+  resolveCommentParentId,
+} from '@/app/[locale]/(platform)/event/[slug]/_utils/comment-replies'
 import ProfileLink from '@/components/ProfileLink'
 import { DropdownMenu, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { useAppKit } from '@/hooks/useAppKit'
@@ -43,13 +46,9 @@ interface CommentItemProps {
   retryLoadReplies: (commentId: string) => void
 }
 
-function resolveReplyParentCommentId(reply: Comment) {
-  return reply.parent_comment_id ?? reply.parentCommentID ?? null
-}
-
 function resolveReplyTargetIdentity(comment: Comment, reply: Comment, replies: Comment[]) {
   const rootIdentity = resolveCommentUserIdentity(comment)
-  const parentCommentId = resolveReplyParentCommentId(reply)
+  const parentCommentId = resolveCommentParentId(reply)
   if (!parentCommentId || parentCommentId === comment.id) {
     return rootIdentity
   }
@@ -272,7 +271,7 @@ export default function EventCommentItem({
             )
           })}
 
-          {comment.replies_count > 3 && !expandedComments.has(comment.id) && (
+          {(comment.recent_replies?.length ?? 0) < comment.replies_count && !expandedComments.has(comment.id) && (
             <EventCommentsLoadMoreReplies
               comment={comment}
               onRepliesLoaded={onRepliesLoaded}
