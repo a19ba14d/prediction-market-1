@@ -405,6 +405,13 @@ export function resolveOrderPanelOutcomeAccentOverrides(
     return {}
   }
 
+  const isMoneylineCondition = card.buttons.some(button =>
+    button.conditionId === market.condition_id && button.marketType === 'moneyline',
+  )
+  if (isMoneylineCondition) {
+    return {}
+  }
+
   const accents: Partial<Record<number, EventOrderPanelOutcomeSelectedAccent>> = {}
   card.buttons.forEach((button) => {
     if (
@@ -787,22 +794,112 @@ export function buildMoneylineGraphTargets(card: SportsGamesCard) {
   }, [])
 }
 
-function resolveTotalButtonLabel(button: SportsGamesButton, selectedOutcome: Outcome | null) {
+const SELECTED_TRADE_LABEL_ACRONYMS = new Set([
+  'BTTS',
+  'CS2',
+  'ET',
+  'EU',
+  'FIFA',
+  'LOL',
+  'MLB',
+  'NBA',
+  'NFL',
+  'NHL',
+  'OT',
+  'PK',
+  'PKS',
+  'UFC',
+  'UK',
+  'US',
+  'USA',
+  'WNBA',
+])
+
+function formatSelectedTradeWord(word: string) {
+  const upperWord = word.toLocaleUpperCase()
+  if (SELECTED_TRADE_LABEL_ACRONYMS.has(upperWord)) {
+    return upperWord
+  }
+
+  const lowerWord = word.toLocaleLowerCase()
+  const [firstLetter, ...restLetters] = Array.from(lowerWord)
+  return firstLetter ? `${firstLetter.toLocaleUpperCase()}${restLetters.join('')}` : word
+}
+
+function formatSelectedTradeTextLabel(value: string | null | undefined, fallback = 'Yes') {
+  const trimmedValue = value?.trim().replace(/\s+/g, ' ') ?? ''
+  if (!trimmedValue) {
+    return fallback
+  }
+
+  return trimmedValue.replace(/[\p{L}\p{N}][\p{L}\p{M}\p{N}'’]*/gu, formatSelectedTradeWord)
+}
+
+function resolveTotalButtonLabel(
+  button: SportsGamesButton,
+  selectedOutcome: Outcome | null,
+  options?: { casing?: 'title' | 'upper' },
+) {
   const line = extractLineValue(button.label)
   const outcomeText = selectedOutcome?.outcome_text?.trim() ?? ''
 
-  let sideLabel: 'OVER' | 'UNDER'
+  let side: 'over' | 'under'
   if (/^under$/i.test(outcomeText) || button.tone === 'under') {
-    sideLabel = 'UNDER'
+    side = 'under'
   }
   else if (/^over$/i.test(outcomeText) || button.tone === 'over') {
-    sideLabel = 'OVER'
+    side = 'over'
   }
   else {
-    sideLabel = button.label.trim().toUpperCase().startsWith('U') ? 'UNDER' : 'OVER'
+    side = button.label.trim().toUpperCase().startsWith('U') ? 'under' : 'over'
   }
 
+  const sideLabel = side === 'under'
+    ? (options?.casing === 'title' ? 'Under' : 'UNDER')
+    : (options?.casing === 'title' ? 'Over' : 'OVER')
+
   return line ? `${sideLabel} ${line}` : sideLabel
+}
+
+function extractButtonLineSuffix(label: string) {
+  const normalizedLabel = label.replace(/\u2212/g, '-')
+  const signedMatch = normalizedLabel.match(/([+-])\s*(\d+(?:\.\d+)?)/)
+  if (signedMatch?.[1] && signedMatch[2]) {
+    return `${signedMatch[1]}${signedMatch[2]}`
+  }
+
+  const unsignedMatches = Array.from(normalizedLabel.matchAll(/(?:^|\s)(\d+(?:\.\d+)?)(?=\s|$)/g))
+  return unsignedMatches.at(-1)?.[1] ?? null
+}
+
+function extractButtonHalfSuffix(label: string) {
+  const match = label.match(/\b([12])H\b/i)
+  return match?.[1] ? `${match[1]}H` : null
+}
+
+function resolveTeamButtonTradeLabel(card: SportsGamesCard, button: SportsGamesButton) {
+  if (button.tone !== 'team1' && button.tone !== 'team2') {
+    return null
+  }
+
+  const team = button.marketType === 'spread'
+    ? resolveLeadingSpreadTeam(card, button)
+    : resolveTeamByTone(card, button.tone)
+  const teamName = team?.name?.trim()
+  if (!teamName) {
+    return null
+  }
+
+  const lineSuffix = button.marketType === 'spread'
+    ? extractButtonLineSuffix(button.label)
+    : null
+  const halfSuffix = lineSuffix ? null : extractButtonHalfSuffix(button.label)
+
+  if (lineSuffix) {
+    return `${teamName} ${lineSuffix}`
+  }
+
+  return halfSuffix ? `${teamName} ${halfSuffix}` : teamName
 }
 
 export function resolveSelectedTradeLabel(
@@ -811,21 +908,23 @@ export function resolveSelectedTradeLabel(
   selectedOutcome: Outcome | null,
 ) {
   if (!button) {
-    return selectedOutcome?.outcome_text?.trim().toUpperCase() || 'YES'
+    return formatSelectedTradeTextLabel(selectedOutcome?.outcome_text, 'Yes')
   }
 
   if (button.marketType === 'total') {
-    return resolveTotalButtonLabel(button, selectedOutcome)
+    return resolveTotalButtonLabel(button, selectedOutcome, { casing: 'title' })
   }
 
-  if (button.marketType === 'moneyline' && (button.tone === 'team1' || button.tone === 'team2')) {
-    const teamName = resolveTeamByTone(card, button.tone)?.name?.trim()
-    if (teamName) {
-      return teamName
-    }
+  if (button.tone === 'draw') {
+    return normalizeComparableText(button.label).includes('neither') ? 'Neither' : 'Draw'
   }
 
-  return button.label.trim().toUpperCase()
+  const teamLabel = resolveTeamButtonTradeLabel(card, button)
+  if (teamLabel) {
+    return teamLabel
+  }
+
+  return formatSelectedTradeTextLabel(button.label, 'Market')
 }
 
 export function resolveSelectedOrderBookTradeLabel(
@@ -853,6 +952,118 @@ function resolveMarketDescriptor(market: Market | null) {
     || market.title?.trim()
     || ''
   return descriptor || null
+}
+
+const SPORTS_MARKET_TYPE_PREFIXES = new Set([
+  'americanfootball',
+  'baseball',
+  'basketball',
+  'boxing',
+  'cricket',
+  'cs2',
+  'dota2',
+  'football',
+  'golf',
+  'hockey',
+  'lol',
+  'mma',
+  'nba',
+  'nfl',
+  'nhl',
+  'rugby',
+  'soccer',
+  'tennis',
+  'ufc',
+  'valorant',
+])
+
+const MARKET_TITLE_SMALL_WORDS = new Set(['a', 'an', 'and', 'by', 'for', 'in', 'of', 'on', 'or', 'the', 'to', 'vs'])
+
+function toMarketTitleCase(value: string) {
+  return value
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((word, index) => {
+      const normalizedWord = word.toLowerCase()
+      if (index > 0 && MARKET_TITLE_SMALL_WORDS.has(normalizedWord)) {
+        return normalizedWord
+      }
+      if (normalizedWord === 'btts') {
+        return 'BTTS'
+      }
+
+      return `${normalizedWord[0]?.toUpperCase() ?? ''}${normalizedWord.slice(1)}`
+    })
+    .join(' ')
+}
+
+function resolveMarketTypeTitle(market: Market | null) {
+  const rawType = market?.sports_market_type?.trim().toLowerCase()
+  if (!rawType) {
+    return null
+  }
+
+  const descriptor = resolveMarketDescriptor(market)
+  const normalizedType = normalizeComparableText(rawType)
+  const normalizedDescriptor = normalizeComparableText(descriptor)
+  if (normalizedType === 'child moneyline') {
+    if (normalizedDescriptor.includes('advance') || normalizedDescriptor.includes('qualify')) {
+      return 'Team to Advance'
+    }
+
+    return descriptor || 'Map / Game Winner'
+  }
+
+  const tokens = rawType.split('_').filter(Boolean)
+  const displayTokens = SPORTS_MARKET_TYPE_PREFIXES.has(tokens[0] ?? '')
+    ? tokens.slice(1)
+    : tokens
+  if (displayTokens.length === 0) {
+    return null
+  }
+
+  return toMarketTitleCase(displayTokens.join(' '))
+}
+
+function resolveTeamTotalMarketHeaderTitle(market: Market | null) {
+  const normalizedType = normalizeComparableText(market?.sports_market_type)
+  if (!normalizedType.includes('team total') && !normalizedType.includes('team totals')) {
+    return null
+  }
+
+  const descriptor = resolveMarketDescriptor(market)
+  if (!descriptor) {
+    return null
+  }
+
+  return descriptor
+    .replace(/\s*:\s*(?:o\/u|over\/under|over|under)\s*\d+(?:\.\d+)?\s*$/i, '')
+    .replace(/\s+(?:o\/u|over\/under|over|under)\s*\d+(?:\.\d+)?\s*$/i, '')
+    .trim()
+    || descriptor
+}
+
+function resolveHalftimeResultHeaderTitle(market: Market | null) {
+  const normalizedText = normalizeComparableText([
+    market?.sports_market_type,
+    market?.sports_group_item_title,
+    market?.short_title,
+    market?.title,
+  ].filter(Boolean).join(' '))
+
+  if (/\b(?:second half|2nd half|2h)\s+(?:result|moneyline)\b/.test(normalizedText)) {
+    return 'Second Half Result'
+  }
+
+  if (/\b(?:first half|1st half|1h)\s+(?:result|moneyline)\b/.test(normalizedText)) {
+    return 'First Half Result'
+  }
+
+  if (/\bhalf\s*time\s+(?:result|moneyline)\b/.test(normalizedText)) {
+    return 'Halftime Result'
+  }
+
+  return null
 }
 
 export function normalizeComparableText(value: string | null | undefined) {
@@ -1169,12 +1380,6 @@ function shouldUseFranchiseTradeHeaderTeamLabels(sportSlugs: string[]) {
   return sportSlugs.some(slug => COMPACT_FRANCHISE_TRADE_HEADER_SPORT_SLUGS.has(slug))
 }
 
-function hasDrawMoneylineOption(card: SportsGamesCard) {
-  return card.buttons.some(button =>
-    button.marketType === 'moneyline' && button.tone === 'draw',
-  )
-}
-
 function resolveCompactTradeHeaderTitle(
   card: SportsGamesCard,
   resolveTeamLabel: (
@@ -1196,10 +1401,6 @@ function resolveCompactTradeHeaderTitle(
 
 function shouldUseCompactTradeHeaderTitle(card: SportsGamesCard, vertical: SportsVertical | null) {
   if (vertical === 'esports') {
-    return true
-  }
-
-  if (hasDrawMoneylineOption(card)) {
     return true
   }
 
@@ -1254,6 +1455,32 @@ export function resolveTradeHeaderTitle({
     return descriptor ? `Exact Score: ${descriptor}` : 'Exact Score'
   }
 
+  const halftimeResultTitle = resolveHalftimeResultHeaderTitle(selectedMarket)
+  if (halftimeResultTitle) {
+    return halftimeResultTitle
+  }
+
+  if (marketType !== 'moneyline') {
+    const teamTotalTitle = resolveTeamTotalMarketHeaderTitle(selectedMarket)
+    if (teamTotalTitle) {
+      return teamTotalTitle
+    }
+
+    const marketTypeTitle = resolveMarketTypeTitle(selectedMarket)
+    if (marketTypeTitle) {
+      return marketTypeTitle
+    }
+    const descriptor = resolveMarketDescriptor(selectedMarket)
+    if (descriptor) {
+      return descriptor
+    }
+  }
+
+  const team1 = card.teams[0] ?? null
+  const team2 = card.teams[1] ?? null
+  const fullMatchupTitle = [team1?.name?.trim(), team2?.name?.trim()].filter(Boolean).join(' vs ')
+    || card.title?.trim()
+
   if (marketType === 'btts') {
     return 'Both Teams to Score?'
   }
@@ -1262,8 +1489,6 @@ export function resolveTradeHeaderTitle({
     return 'Over vs Under'
   }
 
-  const team1 = card.teams[0] ?? null
-  const team2 = card.teams[1] ?? null
   const vertical = resolveSportsVerticalFromTags({
     tags: card.event.tags,
     mainTag: card.event.main_tag,
@@ -1282,9 +1507,6 @@ export function resolveTradeHeaderTitle({
       return compactTitle
     }
   }
-
-  const fullMatchupTitle = card.title?.trim()
-    || [team1?.name?.trim(), team2?.name?.trim()].filter(Boolean).join(' vs ')
 
   if (fullMatchupTitle) {
     return fullMatchupTitle

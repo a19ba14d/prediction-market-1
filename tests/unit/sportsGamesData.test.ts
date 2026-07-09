@@ -1,6 +1,7 @@
 import {
   buildSportsGamesCardGroups,
   isSportsGamesCardResolved,
+  resolveSportsAuxiliaryMarketGroupKey,
   resolveSportsMarketLineValue,
   resolveSportsPlayerPropPlayerName,
 } from '@/app/[locale]/(platform)/sports/_utils/sports-games-data'
@@ -24,6 +25,7 @@ function buildBinaryMarket(params: {
   title: string
   marketType: string
   threshold?: string
+  sportsLine?: string | null
   createdAt?: string
   volume?: number
 }) {
@@ -34,6 +36,7 @@ function buildBinaryMarket(params: {
     title,
     marketType,
     threshold = null,
+    sportsLine = null,
     createdAt = '2026-03-13T00:00:00.000Z',
     volume = 10,
   } = params
@@ -51,6 +54,7 @@ function buildBinaryMarket(params: {
     block_number: 0,
     block_timestamp: createdAt,
     sports_market_type: marketType,
+    sports_line: sportsLine,
     sports_group_item_title: title,
     sports_group_item_threshold: threshold,
     volume,
@@ -542,6 +546,73 @@ describe('sportsGamesData', () => {
     expect(moneylineButtons.map(button => button.label)).toEqual(['NGA', 'ZWE'])
     expect(moneylineButtons.some(button => button.label === 'DRAW')).toBe(false)
     expect(binaryButtons.map(button => button.label)).toEqual(['NGA', 'DRAW', 'ZWE'])
+  })
+
+  it('keeps first-to-score neither markets between both teams', () => {
+    const baseSlug = 'fifwc-fra-mar-2026-07-09'
+    const baseEventId = 'france-morocco-base-event'
+    const auxiliaryEventId = 'france-morocco-first-to-score-event'
+
+    const groupedEvents = buildSportsGamesCardGroups([
+      buildSportsEvent({
+        id: auxiliaryEventId,
+        slug: `${baseSlug}-first-to-score`,
+        title: 'France vs Morocco - First To Score',
+        sportsParentEventId: 101,
+        markets: [
+          buildBinaryMarket({
+            eventId: auxiliaryEventId,
+            conditionId: 'first-to-score-france',
+            slug: `${baseSlug}-first-to-score-france`,
+            title: 'France',
+            marketType: 'soccer_first_to_score',
+            threshold: '0',
+          }),
+          buildBinaryMarket({
+            eventId: auxiliaryEventId,
+            conditionId: 'first-to-score-neither',
+            slug: `${baseSlug}-first-to-score-neither`,
+            title: 'Neither',
+            marketType: 'soccer_first_to_score',
+            threshold: '1',
+          }),
+          buildBinaryMarket({
+            eventId: auxiliaryEventId,
+            conditionId: 'first-to-score-morocco',
+            slug: `${baseSlug}-first-to-score-morocco`,
+            title: 'Morocco',
+            marketType: 'soccer_first_to_score',
+            threshold: '2',
+          }),
+        ],
+      }),
+      buildSportsEvent({
+        id: baseEventId,
+        slug: baseSlug,
+        title: 'France vs Morocco',
+        sportsEventId: '101',
+        sportsTeams: [
+          { name: 'France', abbreviation: 'FRA', host_status: 'home' },
+          { name: 'Morocco', abbreviation: 'MAR', host_status: 'away' },
+        ],
+        markets: [
+          buildMoneylineMarket({
+            eventId: baseEventId,
+            slug: baseSlug,
+            title: 'France vs Morocco',
+            outcomes: ['France', 'Morocco'],
+          }),
+        ],
+      }),
+    ])
+
+    const card = groupedEvents[0]?.primaryCard
+    const firstToScoreButtons = card?.buttons.filter(button =>
+      button.conditionId.startsWith('first-to-score-'),
+    ) ?? []
+
+    expect(firstToScoreButtons.map(button => button.label)).toEqual(['FRA', 'Neither', 'MAR'])
+    expect(firstToScoreButtons.map(button => button.tone)).toEqual(['team1', 'draw', 'team2'])
   })
 
   it('does not use indexed team logo fallback when unnamed teams make the logo array ambiguous', () => {
@@ -1301,6 +1372,169 @@ describe('sportsGamesData', () => {
       'goalscorer-messi:NO',
       'goalscorer-suarez:YES',
       'goalscorer-suarez:NO',
+    ])
+  })
+
+  it('keeps first and second half result markets in separate moneyline groups', () => {
+    const event = buildSportsEvent({
+      id: 'france-morocco-halves',
+      slug: 'france-morocco-2026-07-09-halves',
+      title: 'France vs Morocco',
+      sportsTeams: [
+        { name: 'France', abbreviation: 'FRA', host_status: 'home' },
+        { name: 'Morocco', abbreviation: 'MAR', host_status: 'away' },
+      ],
+      markets: [
+        buildBinaryMarket({
+          conditionId: 'first-half-france',
+          eventId: 'france-morocco-halves',
+          slug: 'france-morocco-first-half-home',
+          title: 'France',
+          marketType: 'First Half Result',
+          sportsLine: '0',
+        }),
+        buildBinaryMarket({
+          conditionId: 'first-half-draw',
+          eventId: 'france-morocco-halves',
+          slug: 'france-morocco-first-half-draw',
+          title: 'Draw',
+          marketType: 'First Half Result',
+          sportsLine: '1',
+        }),
+        buildBinaryMarket({
+          conditionId: 'first-half-morocco',
+          eventId: 'france-morocco-halves',
+          slug: 'france-morocco-first-half-away',
+          title: 'Morocco',
+          marketType: 'First Half Result',
+          sportsLine: '2',
+        }),
+        buildBinaryMarket({
+          conditionId: 'second-half-france',
+          eventId: 'france-morocco-halves',
+          slug: 'france-morocco-second-half-home',
+          title: 'France',
+          marketType: 'Second Half Result',
+          sportsLine: '0',
+        }),
+        buildBinaryMarket({
+          conditionId: 'second-half-draw',
+          eventId: 'france-morocco-halves',
+          slug: 'france-morocco-second-half-draw',
+          title: 'Draw',
+          marketType: 'Second Half Result',
+          sportsLine: '1',
+        }),
+        buildBinaryMarket({
+          conditionId: 'second-half-morocco',
+          eventId: 'france-morocco-halves',
+          slug: 'france-morocco-second-half-away',
+          title: 'Morocco',
+          marketType: 'Second Half Result',
+          sportsLine: '2',
+        }),
+      ],
+    })
+
+    const group = buildSportsGamesCardGroups([event])[0]
+    const halvesCard = group?.marketViewCards.find(view => view.key === 'halves')?.card ?? null
+    expect(halvesCard?.buttons.map(button => `${button.conditionId}:${button.label}:${button.marketType}`)).toEqual([
+      'first-half-france:FRA:moneyline',
+      'first-half-draw:DRAW:moneyline',
+      'first-half-morocco:MAR:moneyline',
+      'second-half-france:FRA:moneyline',
+      'second-half-draw:DRAW:moneyline',
+      'second-half-morocco:MAR:moneyline',
+    ])
+
+    const panelKeysByConditionId = new Map(
+      halvesCard?.detailMarkets.map(market => [
+        market.condition_id,
+        resolveSportsAuxiliaryMarketGroupKey(market),
+      ]) ?? [],
+    )
+    const firstHalfPanelKeys = new Set([
+      panelKeysByConditionId.get('first-half-france'),
+      panelKeysByConditionId.get('first-half-draw'),
+      panelKeysByConditionId.get('first-half-morocco'),
+    ])
+    const secondHalfPanelKeys = new Set([
+      panelKeysByConditionId.get('second-half-france'),
+      panelKeysByConditionId.get('second-half-draw'),
+      panelKeysByConditionId.get('second-half-morocco'),
+    ])
+
+    expect(firstHalfPanelKeys.size).toBe(1)
+    expect(secondHalfPanelKeys.size).toBe(1)
+    expect(firstHalfPanelKeys).not.toEqual(secondHalfPanelKeys)
+  })
+
+  it('classifies compact 1H and 2H result markets as halves', () => {
+    const event = buildSportsEvent({
+      id: 'france-morocco-compact-halves',
+      slug: 'france-morocco-2026-07-09-compact-halves',
+      title: 'France vs Morocco',
+      sportsTeams: [
+        { name: 'France', abbreviation: 'FRA', host_status: 'home' },
+        { name: 'Morocco', abbreviation: 'MAR', host_status: 'away' },
+      ],
+      markets: [
+        buildBinaryMarket({
+          conditionId: 'first-half-france-compact',
+          eventId: 'france-morocco-compact-halves',
+          slug: 'france-morocco-1h-home',
+          title: 'France',
+          marketType: '1H Result',
+        }),
+        buildBinaryMarket({
+          conditionId: 'first-half-draw-compact',
+          eventId: 'france-morocco-compact-halves',
+          slug: 'france-morocco-1h-draw',
+          title: 'Draw',
+          marketType: '1H Result',
+        }),
+        buildBinaryMarket({
+          conditionId: 'first-half-morocco-compact',
+          eventId: 'france-morocco-compact-halves',
+          slug: 'france-morocco-1h-away',
+          title: 'Morocco',
+          marketType: '1H Result',
+        }),
+        buildBinaryMarket({
+          conditionId: 'second-half-france-compact',
+          eventId: 'france-morocco-compact-halves',
+          slug: 'france-morocco-2h-home',
+          title: 'France',
+          marketType: '2H Result',
+        }),
+        buildBinaryMarket({
+          conditionId: 'second-half-draw-compact',
+          eventId: 'france-morocco-compact-halves',
+          slug: 'france-morocco-2h-draw',
+          title: 'Draw',
+          marketType: '2H Result',
+        }),
+        buildBinaryMarket({
+          conditionId: 'second-half-morocco-compact',
+          eventId: 'france-morocco-compact-halves',
+          slug: 'france-morocco-2h-away',
+          title: 'Morocco',
+          marketType: '2H Result',
+        }),
+      ],
+    })
+
+    const group = buildSportsGamesCardGroups([event])[0]
+    expect(group?.marketViewCards.map(view => view.key)).toEqual(['halves'])
+
+    const halvesCard = group?.marketViewCards.find(view => view.key === 'halves')?.card ?? null
+    expect(halvesCard?.buttons.map(button => `${button.conditionId}:${button.label}`)).toEqual([
+      'first-half-france-compact:FRA 1H',
+      'first-half-draw-compact:DRAW 1H',
+      'first-half-morocco-compact:MAR 1H',
+      'second-half-france-compact:FRA 2H',
+      'second-half-draw-compact:DRAW 2H',
+      'second-half-morocco-compact:MAR 2H',
     ])
   })
 
