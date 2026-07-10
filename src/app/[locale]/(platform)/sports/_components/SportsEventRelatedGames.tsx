@@ -3,9 +3,14 @@
 import type { SportsGamesCard } from '@/app/[locale]/(platform)/sports/_utils/sports-games-data'
 import type { SportsVertical } from '@/lib/sports-vertical'
 import Image from 'next/image'
-import { useMemo } from 'react'
-import { formatRelatedOddsLabel, resolveRelatedTeamOdds } from '@/app/[locale]/(platform)/sports/_components/sports-event-center-utils'
+import {
+  formatRelatedOddsLabel,
+  formatSportsRelatedGameLocalStartLabel,
+  formatSportsRelatedGameStartLabel,
+  resolveRelatedTeamOdds,
+} from '@/app/[locale]/(platform)/sports/_components/sports-event-center-utils'
 import AppLink from '@/components/AppLink'
+import { useHasHydrated } from '@/hooks/useHasHydrated'
 import { formatVolume } from '@/lib/formatters'
 import { getSportsVerticalConfig } from '@/lib/sports-vertical'
 import { cn } from '@/lib/utils'
@@ -24,16 +29,7 @@ function SportsEventRelatedGames({
   vertical: SportsVertical
 }) {
   const verticalConfig = getSportsVerticalConfig(vertical)
-  const dateTimeFormatter = useMemo(
-    () => new Intl.DateTimeFormat(locale, {
-      month: 'short',
-      day: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit',
-      timeZone: 'UTC',
-    }),
-    [locale],
-  )
+  const hasHydrated = useHasHydrated()
 
   if (cards.length === 0) {
     return null
@@ -53,7 +49,14 @@ function SportsEventRelatedGames({
         {cards.map((relatedCard) => {
           const startTime = relatedCard.startTime ? new Date(relatedCard.startTime) : null
           const hasValidStartTime = Boolean(startTime && !Number.isNaN(startTime.getTime()))
-          const topLineDate = hasValidStartTime ? dateTimeFormatter.format(startTime as Date) : 'Date TBD'
+          const topLineDate = hasValidStartTime
+            ? (
+                hasHydrated
+                  ? formatSportsRelatedGameLocalStartLabel(startTime as Date, locale)
+                  ?? formatSportsRelatedGameStartLabel(startTime as Date, locale)
+                  : formatSportsRelatedGameStartLabel(startTime as Date, locale)
+              )
+            : 'Date TBD'
           const { team1Cents, team2Cents } = resolveRelatedTeamOdds(relatedCard)
           const team1 = relatedCard.teams[0] ?? null
           const team2 = relatedCard.teams[1] ?? null

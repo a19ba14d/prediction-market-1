@@ -15,6 +15,7 @@ import { resolveEventOutcomePath } from '@/lib/events-routing'
 import { formatDate, formatVolume } from '@/lib/formatters'
 import { isEventResolvedLike } from '@/lib/home-events'
 import { resolveHomeSportsButtonChance, resolveResolvedHomeSportsMoneylineWinner } from '@/lib/sports-home-card'
+import { parseSportsScore } from '@/lib/sports-resolution'
 import { resolveSportsTeamFallbackClassName } from '@/lib/sports-team-colors'
 import { cn } from '@/lib/utils'
 
@@ -253,6 +254,10 @@ export default function EventCardSportsMoneyline({
   const resolvedWinner = isResolvedEvent
     ? resolveResolvedHomeSportsMoneylineWinner(event, model)
     : null
+  const showLiveScore = !isResolvedEvent && event.sports_live === true
+  const parsedLiveScore = showLiveScore ? parseSportsScore(event.sports_score) : null
+  const team1Score = parsedLiveScore?.team1 ?? null
+  const team2Score = parsedLiveScore?.team2 ?? null
 
   return (
     <Card
@@ -289,6 +294,17 @@ export default function EventCardSportsMoneyline({
                     )
                   : null}
               </div>
+              {team1Score !== null && (
+                <>
+                  <span
+                    aria-label={`${model.team1.name} score ${team1Score}`}
+                    className="shrink-0 text-sm font-medium text-foreground tabular-nums"
+                  >
+                    {team1Score}
+                  </span>
+                  <span className="h-4 w-px shrink-0 bg-border" aria-hidden="true" />
+                </>
+              )}
               <p className="truncate text-sm font-medium decoration-2 group-hover/team-row-1:underline">
                 {model.team1.name}
               </p>
@@ -317,6 +333,17 @@ export default function EventCardSportsMoneyline({
                     )
                   : null}
               </div>
+              {team2Score !== null && (
+                <>
+                  <span
+                    aria-label={`${model.team2.name} score ${team2Score}`}
+                    className="shrink-0 text-sm font-medium text-foreground tabular-nums"
+                  >
+                    {team2Score}
+                  </span>
+                  <span className="h-4 w-px shrink-0 bg-border" aria-hidden="true" />
+                </>
+              )}
               <p className="truncate text-sm font-medium decoration-2 group-hover/team-row-2:underline">
                 {model.team2.name}
               </p>

@@ -46,6 +46,7 @@ import {
   headerIconButtonClass,
 } from '@/app/[locale]/(platform)/sports/_components/sports-event-center-types'
 import {
+  formatSportsEventLocalStartLabels,
   formatSportsEventStartLabels,
   normalizeLivestreamUrl,
   parseSportsScore,
@@ -84,6 +85,7 @@ import EventIconImage from '@/components/EventIconImage'
 import SiteLogoIcon from '@/components/SiteLogoIcon'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useCurrentTimestamp } from '@/hooks/useCurrentTimestamp'
+import { useHasHydrated } from '@/hooks/useHasHydrated'
 import { useIsMobile } from '@/hooks/useIsMobile'
 import { useSiteIdentity } from '@/hooks/useSiteIdentity'
 import { formatVolume } from '@/lib/formatters'
@@ -326,6 +328,7 @@ export default function SportsEventCenter({
 }: SportsEventCenterProps) {
   const verticalConfig = getSportsVerticalConfig(vertical)
   const locale = useLocale()
+  const hasHydrated = useHasHydrated()
   const site = useSiteIdentity()
   const isMobile = useIsMobile()
   const setOrderEvent = useOrder(state => state.setEvent)
@@ -699,8 +702,12 @@ export default function SportsEventCenter({
   const startLabels = startTimestamp !== null
     ? formatSportsEventStartLabels(startTimestamp, locale)
     : null
-  const timeLabel = startLabels?.timeLabel ?? 'TBD'
-  const dayLabel = startLabels?.dayLabel ?? 'Date TBD'
+  const localStartLabels = hasHydrated && startTimestamp !== null
+    ? formatSportsEventLocalStartLabels(startTimestamp, locale)
+    : null
+  const visibleStartLabels = localStartLabels ?? startLabels
+  const timeLabel = visibleStartLabels?.timeLabel ?? 'TBD'
+  const dayLabel = visibleStartLabels?.dayLabel ?? 'Date TBD'
 
   const team1 = heroCard.teams[0] ?? null
   const team2 = heroCard.teams[1] ?? null
@@ -1668,7 +1675,8 @@ export default function SportsEventCenter({
       </Suspense>
       <div className={cn(`
         min-[1200px]:grid min-[1200px]:h-full min-[1200px]:min-h-0 min-[1200px]:grid-cols-[minmax(0,1fr)_21.25rem]
-        min-[1200px]:[align-content:start] min-[1200px]:[align-items:start] min-[1200px]:gap-6
+        min-[1200px]:grid-rows-[minmax(0,1fr)] min-[1200px]:[align-content:start] min-[1200px]:items-stretch
+        min-[1200px]:gap-6
       `)}
       >
         <section
@@ -1969,8 +1977,8 @@ export default function SportsEventCenter({
           data-sports-scroll-pane="aside"
           className={cn(`
             hidden gap-4
-            min-[1200px]:sticky min-[1200px]:top-0 min-[1200px]:block min-[1200px]:h-fit min-[1200px]:max-h-full
-            min-[1200px]:self-start min-[1200px]:overflow-y-auto
+            min-[1200px]:sticky min-[1200px]:top-0 min-[1200px]:block min-[1200px]:h-full min-[1200px]:min-h-0
+            min-[1200px]:self-stretch min-[1200px]:overflow-y-auto min-[1200px]:overscroll-contain
           `)}
         >
           {activeTradeContext

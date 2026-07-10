@@ -21,7 +21,7 @@ import {
   FlameIcon,
 } from 'lucide-react'
 import { DynamicIcon } from 'lucide-react/dynamic'
-import { useExtracted } from 'next-intl'
+import { useExtracted, useLocale } from 'next-intl'
 import dynamic from 'next/dynamic'
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import EventBookmark from '@/app/[locale]/(platform)/event/[slug]/_components/EventBookmark'
@@ -33,16 +33,22 @@ import {
   buildLinePickerOptions,
   resolveSportsGraphSelection,
 } from '@/app/[locale]/(platform)/sports/_components/_sports-games-center/sports-games-center-utils'
+import {
+  formatSportsEventLocalStartLabels,
+  formatSportsEventStartLabels,
+} from '@/app/[locale]/(platform)/sports/_components/sports-event-center-utils'
 import { buildSportsGamesCards } from '@/app/[locale]/(platform)/sports/_utils/sports-games-data'
 import AppLink from '@/components/AppLink'
 import EventIconImage from '@/components/EventIconImage'
 import SiteLogoIcon from '@/components/SiteLogoIcon'
 import { Button } from '@/components/ui/button'
+import { useHasHydrated } from '@/hooks/useHasHydrated'
 import { useIsMobile } from '@/hooks/useIsMobile'
 import { useSiteIdentity } from '@/hooks/useSiteIdentity'
 import { ensureReadableTextColorOnDark } from '@/lib/color-contrast'
 import { resolveEventOutcomePath, resolveEventPagePath } from '@/lib/events-routing'
 import { formatDollarValueLabel, formatVolume } from '@/lib/formatters'
+import { resolveHomeFeaturedSportsScoreboardContent } from '@/lib/home-featured-sports-score'
 import { resolveSportsTeamFallbackClassName } from '@/lib/sports-team-colors'
 import { cn } from '@/lib/utils'
 
@@ -904,9 +910,9 @@ function SportsFeaturedLineMarketCarousel({
     <div className="grid gap-2.5">
       <div className="grid min-h-8 grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
         <span className="min-w-0 truncate text-base font-semibold">{label}</span>
-        <div className="
+        <div className={cn(`
           grid grid-cols-[1.75rem_2.5rem_2.5rem_2.5rem_1.75rem] items-center gap-1 text-sm font-semibold tabular-nums
-        "
+        `)}
         >
           <LinePickerArrowButton
             direction="previous"
@@ -1167,6 +1173,8 @@ function SportsScoreboard({
   item: HomeFeaturedEventCard
   linkedHref: string
 }) {
+  const hasHydrated = useHasHydrated()
+  const locale = useLocale()
   const teams = card?.teams.length
     ? card.teams.map(team => ({
         name: team.name,
@@ -1176,8 +1184,25 @@ function SportsScoreboard({
         name: team.name,
         logoUrl: team.logo_url ?? item.event.sports_team_logo_urls?.[index] ?? null,
       }))
-  const score = item.event.sports_score?.trim()
   const liveMeta = [item.event.sports_period, item.event.sports_elapsed].filter(Boolean).join(' · ')
+  const scoreboardContent = resolveHomeFeaturedSportsScoreboardContent({
+    score: item.event.sports_score,
+    temporalStatus: item.temporalStatus,
+    liveMeta,
+  })
+  const parsedStartTimestamp = item.event.sports_start_time
+    ? Date.parse(item.event.sports_start_time)
+    : item.event.start_date
+      ? Date.parse(item.event.start_date)
+      : Number.NaN
+  const startTimestamp = Number.isFinite(parsedStartTimestamp) ? parsedStartTimestamp : null
+  const startLabels = startTimestamp !== null
+    ? (
+        hasHydrated
+          ? formatSportsEventLocalStartLabels(startTimestamp, locale) ?? formatSportsEventStartLabels(startTimestamp, locale)
+          : formatSportsEventStartLabels(startTimestamp, locale)
+      )
+    : null
   if (item.kind !== 'sports' || teams.length < 2) {
     return null
   }
@@ -1190,6 +1215,7 @@ function SportsScoreboard({
   const homeHref = card && homeButton ? resolveFeaturedSportsButtonHref(card, homeButton, linkedHref) : null
   const awayHref = card && awayButton ? resolveFeaturedSportsButtonHref(card, awayButton, linkedHref) : null
   const teamNameClassName = 'inline-block max-w-full truncate text-sm font-medium underline-offset-2 hover:underline'
+  const shouldShowScheduledStart = !scoreboardContent.scoreLabel && !scoreboardContent.showLiveStatus
 
   return (
     <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 rounded-lg bg-secondary/60 p-3">
@@ -1211,15 +1237,34 @@ function SportsScoreboard({
           : <p className="truncate text-sm font-medium">{homeTeam?.name}</p>}
       </div>
       <div className="text-center">
-        <p className="text-3xl font-semibold tabular-nums">{score || '0 - 0'}</p>
-        {item.temporalStatus === 'live' && (
-          <p className="mt-1 text-xs font-semibold tracking-wide text-red-500 uppercase">
+        {scoreboardContent.scoreLabel
+          ? (
+              <p className="text-3xl font-semibold tabular-nums">{scoreboardContent.scoreLabel}</p>
+            )
+          : shouldShowScheduledStart && startLabels
+            ? (
+                <>
+                  <p className="text-sm font-semibold text-foreground tabular-nums">{startLabels.timeLabel}</p>
+                  <p className="mt-2 text-sm font-medium text-muted-foreground">{startLabels.dayLabel}</p>
+                </>
+              )
+            : shouldShowScheduledStart
+              ? (
+                  <p className="text-sm font-semibold text-muted-foreground">{item.temporalLabel}</p>
+                )
+              : null}
+        {scoreboardContent.showLiveStatus && (
+          <p className={cn(
+            'text-xs font-semibold tracking-wide text-red-500 uppercase',
+            scoreboardContent.scoreLabel ? 'mt-1' : undefined,
+          )}
+          >
             LIVE
           </p>
         )}
-        {liveMeta && (
+        {scoreboardContent.liveMeta && (
           <p className="text-sm font-medium text-red-500">
-            {liveMeta}
+            {scoreboardContent.liveMeta}
           </p>
         )}
       </div>
@@ -1308,27 +1353,27 @@ function FeaturedRightRail({
   `
   const sideCardContent = (
     <>
-      <span className="
+      <span className={cn(`
         pointer-events-none absolute bottom-0 left-[30%] h-px w-[40%] bg-linear-to-r from-transparent via-primary/60
         to-transparent
-      "
+      `)}
       />
       <DynamicIcon
         name={sideCard.icon as IconName}
         aria-hidden
-        className="
+        className={cn(`
           pointer-events-none absolute -top-6 -right-7 size-36 rotate-6 text-primary/8 transition-transform duration-300
           group-hover/side-card:scale-105
           motion-safe:animate-pulse
-        "
+        `)}
       />
 
       <div className="relative z-1 flex min-h-0 flex-1 flex-col pt-7 pb-4">
         <span
-          className="
+          className={cn(`
             mb-3 h-1 w-10 rounded-full bg-primary/70
             shadow-[0_0_18px_color-mix(in_oklab,var(--primary)_32%,transparent)]
-          "
+          `)}
         />
         <span className="line-clamp-2 max-w-[16rem] text-xl/tight font-semibold tracking-tight">
           {sideCard.title}
@@ -1343,11 +1388,11 @@ function FeaturedRightRail({
 
         {hasCta && (
           <span
-            className="
+            className={cn(`
               mt-auto ml-auto inline-flex h-9 max-w-full items-center gap-1.5 rounded-full border border-border/70
               bg-background/70 px-3 text-sm font-medium text-foreground shadow-sm shadow-black/4 transition-colors
               group-hover/side-card:border-primary/35 group-hover/side-card:text-primary
-            "
+            `)}
           >
             <span className="truncate">{sideCard.ctaLabel}</span>
             <ChevronRightIcon className="size-4 shrink-0" />
@@ -1422,12 +1467,12 @@ function FeaturedRightRailAction() {
         type="button"
         variant="outline"
         asChild
-        className="
+        className={cn(`
           h-10 w-full rounded-full bg-transparent text-muted-foreground shadow-none transition-colors
           hover:bg-secondary/80 hover:text-foreground
           dark:bg-transparent
           dark:hover:bg-secondary/80
-        "
+        `)}
       >
         <AppLink intentPrefetch href="/predictions/trending">
           Expand all
