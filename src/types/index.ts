@@ -221,6 +221,9 @@ export interface HomeFeaturedSideCardSettings {
   ctaHref: string
   icon: HomeFeaturedSideCardIcon
   useAi: boolean
+  useImage: boolean
+  imagePath: string
+  imageUrl: string
 }
 
 export interface HomeFeaturedSettings {

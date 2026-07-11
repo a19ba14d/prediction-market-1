@@ -19,6 +19,8 @@ export const HOME_FEATURED_SIDE_CARD_CTA_LABEL_KEY = 'side_card_cta_label'
 export const HOME_FEATURED_SIDE_CARD_CTA_HREF_KEY = 'side_card_cta_href'
 export const HOME_FEATURED_SIDE_CARD_ICON_KEY = 'side_card_icon'
 export const HOME_FEATURED_SIDE_CARD_USE_AI_KEY = 'side_card_use_ai'
+export const HOME_FEATURED_SIDE_CARD_USE_IMAGE_KEY = 'side_card_use_image'
+export const HOME_FEATURED_SIDE_CARD_IMAGE_PATH_KEY = 'side_card_image_path'
 
 const HOME_FEATURED_CONTEXT_MODES: HomeFeaturedContextMode[] = ['auto', 'news', 'comments', 'hidden']
 export const HOME_FEATURED_SIDE_CARD_ICONS: HomeFeaturedSideCardIcon[] = [
@@ -76,8 +78,9 @@ export const HOME_FEATURED_SIDE_CARD_ICONS: HomeFeaturedSideCardIcon[] = [
 export const HOME_FEATURED_SIDE_CARD_LIMITS = {
   title: 56,
   text: 150,
-  ctaLabel: 28,
+  ctaLabel: 80,
   ctaHref: 240,
+  imagePath: 240,
 } as const
 
 export const DEFAULT_HOME_FEATURED_SETTINGS: HomeFeaturedSettings = {
@@ -97,6 +100,9 @@ export const DEFAULT_HOME_FEATURED_SETTINGS: HomeFeaturedSettings = {
     ctaHref: '',
     icon: 'trending-up',
     useAi: false,
+    useImage: false,
+    imagePath: '',
+    imageUrl: '',
   },
 }
 
@@ -176,6 +182,11 @@ function parseSideCardHref(value: string | undefined) {
   }
 
   return ''
+}
+
+function parseSideCardImagePath(value: string | undefined) {
+  const normalized = normalizeOptionalCompactText(value, HOME_FEATURED_SIDE_CARD_LIMITS.imagePath)
+  return /^home-featured\/side-card-[a-z0-9-]+\.webp$/i.test(normalized) ? normalized : ''
 }
 
 function parseNewsSourcesInput(input: string) {
@@ -291,6 +302,12 @@ export function getHomeFeaturedSettingsFromSettings(allSettings?: SettingsMap): 
         settings?.[HOME_FEATURED_SIDE_CARD_USE_AI_KEY]?.value,
         defaults.sideCard.useAi,
       ),
+      useImage: parseBoolean(
+        settings?.[HOME_FEATURED_SIDE_CARD_USE_IMAGE_KEY]?.value,
+        defaults.sideCard.useImage,
+      ),
+      imagePath: parseSideCardImagePath(settings?.[HOME_FEATURED_SIDE_CARD_IMAGE_PATH_KEY]?.value),
+      imageUrl: '',
     },
   }
 }
@@ -311,6 +328,8 @@ export function validateHomeFeaturedSettingsInput(input: {
   sideCardCtaHref?: string
   sideCardIcon?: string
   sideCardUseAi?: string
+  sideCardUseImage?: string
+  sideCardImagePath?: string
 }): { data: HomeFeaturedSettings, error: null } | { data: null, error: string } {
   const defaultContextMode = parseContextMode(input.defaultContextMode, 'auto')
   const maxCards = parseInteger(input.maxCards, DEFAULT_HOME_FEATURED_SETTINGS.maxCards, 1, 8)
@@ -337,6 +356,9 @@ export function validateHomeFeaturedSettingsInput(input: {
         ctaHref: parseSideCardHref(input.sideCardCtaHref),
         icon: parseSideCardIcon(input.sideCardIcon, sideCardDefaults.icon),
         useAi: parseBoolean(input.sideCardUseAi, sideCardDefaults.useAi),
+        useImage: parseBoolean(input.sideCardUseImage, sideCardDefaults.useImage),
+        imagePath: parseSideCardImagePath(input.sideCardImagePath),
+        imageUrl: '',
       },
     },
     error: null,

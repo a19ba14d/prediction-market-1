@@ -39,6 +39,8 @@ const MAX_LOGO_FILE_SIZE = 2 * 1024 * 1024
 const ACCEPTED_LOGO_TYPES = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/svg+xml']
 const MAX_PWA_ICON_FILE_SIZE = 2 * 1024 * 1024
 const ACCEPTED_PWA_ICON_TYPES = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/svg+xml']
+const MAX_SIDE_CARD_IMAGE_FILE_SIZE = 2 * 1024 * 1024
+const ACCEPTED_SIDE_CARD_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp']
 const MAX_TERMS_OF_SERVICE_PDF_FILE_SIZE = 2 * 1024 * 1024
 export interface GeneralSettingsActionState {
   error: string | null
@@ -52,6 +54,11 @@ function buildThemeAssetPath(prefix: string) {
 function buildTermsOfServicePdfPath() {
   const random = Math.random().toString(36).slice(2, 8)
   return `legal/terms-of-service-${Date.now()}-${random}.pdf`
+}
+
+function buildSideCardImagePath() {
+  const random = Math.random().toString(36).slice(2, 8)
+  return `home-featured/side-card-${Date.now()}-${random}.webp`
 }
 
 async function loadSharp() {
@@ -138,6 +145,43 @@ async function processPwaIconFile(file: File, size: number, label: string) {
   }
 
   return { path: filePath, error: null as string | null }
+}
+
+async function processSideCardImageFile(file: File) {
+  if (!ACCEPTED_SIDE_CARD_IMAGE_TYPES.includes(file.type)) {
+    return { path: null as string | null, error: 'Side card image must be PNG, JPG, or WebP.' }
+  }
+
+  if (file.size > MAX_SIDE_CARD_IMAGE_FILE_SIZE) {
+    return { path: null as string | null, error: 'Side card image must be 2MB or smaller.' }
+  }
+
+  const { sharp, error: sharpError } = await loadSharp()
+  if (!sharp) {
+    return { path: null as string | null, error: sharpError ?? DEFAULT_ERROR_MESSAGE }
+  }
+
+  try {
+    const buffer = Buffer.from(await file.arrayBuffer())
+    const output = await sharp(buffer, { limitInputPixels: 40_000_000 })
+      .rotate()
+      .resize(1200, 800, { fit: 'cover', position: 'attention' })
+      .webp({ quality: 88 })
+      .toBuffer()
+    const filePath = buildSideCardImagePath()
+    const { error } = await uploadPublicAsset(filePath, output, {
+      contentType: 'image/webp',
+      cacheControl: '31536000',
+    })
+
+    return error
+      ? { path: null as string | null, error: DEFAULT_ERROR_MESSAGE }
+      : { path: filePath, error: null as string | null }
+  }
+  catch (error) {
+    console.error('Failed to process side card image', error)
+    return { path: null as string | null, error: 'Side card image could not be processed.' }
+  }
 }
 
 function isPdfFile(file: File) {
@@ -291,6 +335,9 @@ async function updateGeneralSettingsActionImpl(
   const homeFeaturedSideCardCtaHrefRaw = formData.get('home_featured_side_card_cta_href')
   const homeFeaturedSideCardIconRaw = formData.get('home_featured_side_card_icon')
   const homeFeaturedSideCardUseAiRaw = formData.get('home_featured_side_card_use_ai')
+  const homeFeaturedSideCardUseImageRaw = formData.get('home_featured_side_card_use_image')
+  const homeFeaturedSideCardImagePathRaw = formData.get('home_featured_side_card_image_path')
+  const homeFeaturedSideCardImageFileRaw = formData.get('home_featured_side_card_image')
   const homeFeaturedEventsJsonRaw = formData.get('home_featured_events_json')
   const hasHomeFeaturedSettingsPayload = typeof homeFeaturedEnabledRaw === 'string'
   const hasHomeFeaturedEventsPayload = typeof homeFeaturedEventsJsonRaw === 'string'
@@ -377,6 +424,8 @@ async function updateGeneralSettingsActionImpl(
       sideCardCtaHref: typeof homeFeaturedSideCardCtaHrefRaw === 'string' ? homeFeaturedSideCardCtaHrefRaw : '',
       sideCardIcon: typeof homeFeaturedSideCardIconRaw === 'string' ? homeFeaturedSideCardIconRaw : '',
       sideCardUseAi: typeof homeFeaturedSideCardUseAiRaw === 'string' ? homeFeaturedSideCardUseAiRaw : '',
+      sideCardUseImage: typeof homeFeaturedSideCardUseImageRaw === 'string' ? homeFeaturedSideCardUseImageRaw : '',
+      sideCardImagePath: typeof homeFeaturedSideCardImagePathRaw === 'string' ? homeFeaturedSideCardImagePathRaw : '',
     })
     if (!validatedHomeFeatured.data) {
       return { error: validatedHomeFeatured.error ?? 'Invalid featured markets settings.' }
@@ -439,6 +488,20 @@ async function updateGeneralSettingsActionImpl(
     }
 
     tosPdfPath = processed.path
+  }
+
+  if (validatedHomeFeaturedData?.sideCard.useImage) {
+    if (homeFeaturedSideCardImageFileRaw instanceof File && homeFeaturedSideCardImageFileRaw.size > 0) {
+      const processed = await processSideCardImageFile(homeFeaturedSideCardImageFileRaw)
+      if (!processed.path) {
+        return { error: processed.error ?? DEFAULT_ERROR_MESSAGE }
+      }
+      validatedHomeFeaturedData.sideCard.imagePath = processed.path
+    }
+
+    if (!validatedHomeFeaturedData.sideCard.imagePath) {
+      return { error: 'Choose a side card image before saving.' }
+    }
   }
 
   const validated = validateThemeSiteSettingsInput({

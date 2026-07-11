@@ -1773,8 +1773,8 @@ export default function SportsEventCenter({
             </div>
           )}
 
-          <div className="mb-4 flex items-center justify-center gap-12 md:gap-14">
-            <div className="flex w-24 flex-col items-center gap-2 sm:w-28">
+          <div className="mb-4 flex items-center justify-center gap-14 md:gap-16">
+            <div className="flex min-w-0 flex-col items-center gap-2">
               <div
                 className={cn(
                   'pointer-events-none flex items-center justify-center select-none',
@@ -1821,7 +1821,7 @@ export default function SportsEventCenter({
                     )}
               </div>
               <span
-                className="max-w-full text-center text-xs/tight font-semibold text-foreground sm:text-sm"
+                className="text-center text-xs/tight font-semibold whitespace-nowrap text-foreground sm:text-sm"
               >
                 {heroTeam1Label}
               </span>
@@ -1871,7 +1871,7 @@ export default function SportsEventCenter({
                   </div>
                 )}
 
-            <div className="flex w-24 flex-col items-center gap-2 sm:w-28">
+            <div className="flex min-w-0 flex-col items-center gap-2">
               <div
                 className={cn(
                   'pointer-events-none flex items-center justify-center select-none',
@@ -1918,7 +1918,7 @@ export default function SportsEventCenter({
                     )}
               </div>
               <span
-                className="max-w-full text-center text-xs/tight font-semibold text-foreground sm:text-sm"
+                className="text-center text-xs/tight font-semibold whitespace-nowrap text-foreground sm:text-sm"
               >
                 {heroTeam2Label}
               </span>

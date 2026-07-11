@@ -67,6 +67,7 @@ async function AdminGeneralSettingsContent({ locale }: { locale: string }) {
   const initialTermsOfServicePdfPath = getTermsOfServicePdfPath(allSettings ?? undefined)
   const initialTermsOfServicePdfUrl = getTermsOfServicePdfUrl(allSettings ?? undefined) || null
   const initialHomeFeaturedSettings = getHomeFeaturedSettingsFromSettings(allSettings ?? undefined)
+  const initialHomeFeaturedSideCardImageUrl = getPublicAssetUrl(initialHomeFeaturedSettings.sideCard.imagePath || null)
   const { data: initialHomeFeaturedEvents } = await HomeFeaturedEventsRepository.listAdminFeaturedEvents(locale)
   const initialThemeSiteSettingsWithImage: AdminThemeSiteSettingsInitialState = {
     ...initialThemeSiteSettings,
@@ -84,6 +85,7 @@ async function AdminGeneralSettingsContent({ locale }: { locale: string }) {
       initialTermsOfServicePdfPath={initialTermsOfServicePdfPath}
       initialTermsOfServicePdfUrl={initialTermsOfServicePdfUrl}
       initialHomeFeaturedSettings={initialHomeFeaturedSettings}
+      initialHomeFeaturedSideCardImageUrl={initialHomeFeaturedSideCardImageUrl}
       initialHomeFeaturedEvents={initialHomeFeaturedEvents ?? []}
       openRouterSettings={{
         defaultModel: defaultOpenRouterModel,

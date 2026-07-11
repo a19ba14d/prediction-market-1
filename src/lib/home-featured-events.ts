@@ -30,6 +30,7 @@ import { resolveDisplayPrice } from '@/lib/market-chance'
 import { resolvePublicRuntimeEnv } from '@/lib/public-runtime-config.shared'
 import { isSportsEvent, resolveSportsEventGroupPayload } from '@/lib/sports-event-group'
 import { buildHomeSportsMoneylineModel, resolveHomeSportsButtonChance } from '@/lib/sports-home-card'
+import { getPublicAssetUrl } from '@/lib/storage'
 
 const CHART_COLORS = ['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)']
 const FEATURED_COMMENTS_LIMIT = 8
@@ -443,7 +444,7 @@ function buildHomeFeaturedSideCard(input: {
 }): HomeFeaturedSideCardSettings {
   const { configured, featuredEvents, hotTopics } = input
 
-  if (!configured.useAi) {
+  if (configured.useImage || !configured.useAi) {
     return configured
   }
 
@@ -497,11 +498,16 @@ export async function getHomeFeaturedSideCard(
   }
 
   const settings = getHomeFeaturedSettingsFromSettings(allSettings ?? undefined)
-  return buildHomeFeaturedSideCard({
+  const sideCard = buildHomeFeaturedSideCard({
     configured: settings.sideCard,
     featuredEvents,
     hotTopics,
   })
+
+  return {
+    ...sideCard,
+    imageUrl: getPublicAssetUrl(sideCard.imagePath),
+  }
 }
 
 function formatEndDateLabel(endDate: string | null, locale: SupportedLocale) {

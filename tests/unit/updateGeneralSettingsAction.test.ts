@@ -1,3 +1,4 @@
+import { Buffer } from 'node:buffer'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
@@ -238,6 +239,67 @@ describe('updateGeneralSettingsAction', () => {
     }
     finally {
       consoleErrorSpy.mockRestore()
+      vi.doUnmock('sharp')
+    }
+  })
+
+  it('sanitizes and uploads a side card image before saving its settings path', async () => {
+    mocks.getCurrentUser.mockResolvedValueOnce({ id: 'admin-1', is_admin: true })
+    mocks.updateSettings.mockResolvedValueOnce({ data: [], error: null })
+    const pipeline = {
+      rotate: vi.fn(),
+      resize: vi.fn(),
+      webp: vi.fn(),
+      toBuffer: vi.fn().mockResolvedValue(Buffer.from('processed-webp')),
+    }
+    pipeline.rotate.mockReturnValue(pipeline)
+    pipeline.resize.mockReturnValue(pipeline)
+    pipeline.webp.mockReturnValue(pipeline)
+    const sharp = vi.fn().mockReturnValue(pipeline)
+    vi.doMock('sharp', () => ({ default: sharp }))
+
+    try {
+      const { updateGeneralSettingsAction } = await import('@/app/[locale]/admin/(general)/_actions/update-general-settings')
+      const formData = new FormData()
+      formData.set('site_name', 'Kuest')
+      formData.set('site_description', 'Prediction market')
+      formData.set('logo_mode', 'svg')
+      formData.set('logo_svg', '<svg xmlns="http://www.w3.org/2000/svg"></svg>')
+      formData.set('logo_image_path', '')
+      formData.set('home_featured_enabled', 'true')
+      formData.set('home_featured_use_ai', 'false')
+      formData.set('home_featured_max_cards', '6')
+      formData.set('home_featured_default_context_mode', 'auto')
+      formData.set('home_featured_news_sources', '')
+      formData.set('home_featured_comment_blacklist', '')
+      formData.set('home_featured_min_volume_24h', '0')
+      formData.set('home_featured_include_sports_today', 'true')
+      formData.set('home_featured_include_new_events', 'true')
+      formData.set('home_featured_side_card_use_image', 'true')
+      formData.set('home_featured_side_card_image_path', '')
+      formData.set(
+        'home_featured_side_card_image',
+        new File(['image'], 'side-card.png', { type: 'image/png' }),
+      )
+
+      const result = await updateGeneralSettingsAction({ error: null }, formData)
+
+      expect(result).toEqual({ error: null })
+      expect(sharp).toHaveBeenCalledWith(expect.any(Buffer), { limitInputPixels: 40_000_000 })
+      expect(pipeline.resize).toHaveBeenCalledWith(1200, 800, { fit: 'cover', position: 'attention' })
+      expect(mocks.upload).toHaveBeenCalledWith(
+        expect.stringMatching(/^home-featured\/side-card-\d+-[a-z0-9]+\.webp$/),
+        expect.any(Buffer),
+        { contentType: 'image/webp', cacheControl: '31536000' },
+      )
+
+      const savedPayload = mocks.updateSettings.mock.calls[0][0] as Array<{ key: string, value: string }>
+      expect(savedPayload.find(entry => entry.key === 'side_card_use_image')?.value).toBe('true')
+      expect(savedPayload.find(entry => entry.key === 'side_card_image_path')?.value).toMatch(
+        /^home-featured\/side-card-\d+-[a-z0-9]+\.webp$/,
+      )
+    }
+    finally {
       vi.doUnmock('sharp')
     }
   })

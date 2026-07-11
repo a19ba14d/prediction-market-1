@@ -17,9 +17,11 @@ import {
   HOME_FEATURED_SIDE_CARD_CTA_HREF_KEY,
   HOME_FEATURED_SIDE_CARD_CTA_LABEL_KEY,
   HOME_FEATURED_SIDE_CARD_ICON_KEY,
+  HOME_FEATURED_SIDE_CARD_IMAGE_PATH_KEY,
   HOME_FEATURED_SIDE_CARD_TEXT_KEY,
   HOME_FEATURED_SIDE_CARD_TITLE_KEY,
   HOME_FEATURED_SIDE_CARD_USE_AI_KEY,
+  HOME_FEATURED_SIDE_CARD_USE_IMAGE_KEY,
   HOME_FEATURED_USE_AI_KEY,
   serializeCommentBlacklist,
   serializeNewsSources,
@@ -184,5 +186,7 @@ export function buildHomeFeaturedSettingsUpdateRows(settings: HomeFeaturedSettin
     { group: HOME_FEATURED_SETTINGS_GROUP, key: HOME_FEATURED_SIDE_CARD_CTA_HREF_KEY, value: settings.sideCard.ctaHref },
     { group: HOME_FEATURED_SETTINGS_GROUP, key: HOME_FEATURED_SIDE_CARD_ICON_KEY, value: settings.sideCard.icon },
     { group: HOME_FEATURED_SETTINGS_GROUP, key: HOME_FEATURED_SIDE_CARD_USE_AI_KEY, value: String(settings.sideCard.useAi) },
+    { group: HOME_FEATURED_SETTINGS_GROUP, key: HOME_FEATURED_SIDE_CARD_USE_IMAGE_KEY, value: String(settings.sideCard.useImage) },
+    { group: HOME_FEATURED_SETTINGS_GROUP, key: HOME_FEATURED_SIDE_CARD_IMAGE_PATH_KEY, value: settings.sideCard.imagePath },
   ]
 }

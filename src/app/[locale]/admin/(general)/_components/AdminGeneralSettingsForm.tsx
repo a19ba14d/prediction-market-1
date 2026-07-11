@@ -68,6 +68,7 @@ interface AdminGeneralSettingsFormProps {
   initialTermsOfServicePdfPath: string
   initialTermsOfServicePdfUrl: string | null
   initialHomeFeaturedSettings?: HomeFeaturedSettings
+  initialHomeFeaturedSideCardImageUrl?: string | null
   initialHomeFeaturedEvents?: HomeFeaturedEventAdminItem[]
   openRouterSettings: OpenRouterGeneralSettings
   sportsSourceSettings: SportsSourceGeneralSettings
@@ -96,6 +97,7 @@ function AdminGeneralSettingsFormInner({
   initialTermsOfServicePdfPath,
   initialTermsOfServicePdfUrl,
   initialHomeFeaturedSettings,
+  initialHomeFeaturedSideCardImageUrl,
   initialHomeFeaturedEvents,
   openRouterSettings,
   sportsSourceSettings,
@@ -207,6 +209,7 @@ function AdminGeneralSettingsFormInner({
   const [logoPreviewUrl, setLogoPreviewUrl] = useState<string | null>(null)
   const [pwaIcon192PreviewUrl, setPwaIcon192PreviewUrl] = useState<string | null>(null)
   const [pwaIcon512PreviewUrl, setPwaIcon512PreviewUrl] = useState<string | null>(null)
+  const [sideCardImagePreviewUrl, setSideCardImagePreviewUrl] = useState<string | null>(null)
   const [openSections, setOpenSections] = useState<string[]>([])
 
   useEffect(function revokeObjectUrls() {
@@ -220,8 +223,11 @@ function AdminGeneralSettingsFormInner({
       if (pwaIcon512PreviewUrl) {
         URL.revokeObjectURL(pwaIcon512PreviewUrl)
       }
+      if (sideCardImagePreviewUrl) {
+        URL.revokeObjectURL(sideCardImagePreviewUrl)
+      }
     }
-  }, [logoPreviewUrl, pwaIcon192PreviewUrl, pwaIcon512PreviewUrl])
+  }, [logoPreviewUrl, pwaIcon192PreviewUrl, pwaIcon512PreviewUrl, sideCardImagePreviewUrl])
 
   useEffect(function handleFormTransition() {
     const transitionedToIdle = wasPendingRef.current && !isPending
@@ -239,6 +245,10 @@ function AdminGeneralSettingsFormInner({
   const imagePreview = useMemo(() => logoPreviewUrl ?? initialLogoImageUrl, [initialLogoImageUrl, logoPreviewUrl])
   const pwaIcon192Preview = useMemo(() => pwaIcon192PreviewUrl ?? initialPwaIcon192Url, [initialPwaIcon192Url, pwaIcon192PreviewUrl])
   const pwaIcon512Preview = useMemo(() => pwaIcon512PreviewUrl ?? initialPwaIcon512Url, [initialPwaIcon512Url, pwaIcon512PreviewUrl])
+  const sideCardImagePreview = useMemo(
+    () => sideCardImagePreviewUrl ?? initialHomeFeaturedSideCardImageUrl ?? null,
+    [initialHomeFeaturedSideCardImageUrl, sideCardImagePreviewUrl],
+  )
   const serializedCustomJavascriptCodes = useMemo(
     () => serializeCustomJavascriptCodes(customJavascriptCodes.map(toCustomJavascriptCodeConfig)),
     [customJavascriptCodes],
@@ -292,6 +302,14 @@ function AdminGeneralSettingsFormInner({
 
   function handleClearBlockedCountries() {
     setBlockedCountries([])
+  }
+
+  function handleSideCardImageChange(file: File | null) {
+    if (sideCardImagePreviewUrl) {
+      URL.revokeObjectURL(sideCardImagePreviewUrl)
+    }
+
+    setSideCardImagePreviewUrl(file ? URL.createObjectURL(file) : null)
   }
 
   function toggleSection(value: string) {
@@ -448,6 +466,17 @@ function AdminGeneralSettingsFormInner({
       <input type="hidden" name="home_featured_side_card_cta_href" value={homeFeaturedSideCard.ctaHref} />
       <input type="hidden" name="home_featured_side_card_icon" value={homeFeaturedSideCard.icon} />
       <input type="hidden" name="home_featured_side_card_use_ai" value={String(homeFeaturedSideCard.useAi)} />
+      <input type="hidden" name="home_featured_side_card_use_image" value={String(homeFeaturedSideCard.useImage)} />
+      <input type="hidden" name="home_featured_side_card_image_path" value={homeFeaturedSideCard.imagePath} />
+      <input
+        id="home-featured-side-card-image-file"
+        type="file"
+        name="home_featured_side_card_image"
+        accept="image/png,image/jpeg,image/webp"
+        disabled={isPending}
+        className="sr-only"
+        onChange={event => handleSideCardImageChange(event.target.files?.[0] ?? null)}
+      />
       <input type="hidden" name="home_featured_events_json" value={serializedHomeFeaturedEvents} />
 
       <div className="grid min-w-0 gap-6">
@@ -543,6 +572,7 @@ function AdminGeneralSettingsFormInner({
           onIncludeNewEventsChange={setHomeFeaturedIncludeNewEvents}
           sideCard={homeFeaturedSideCard}
           onSideCardChange={setHomeFeaturedSideCard}
+          sideCardImagePreviewUrl={sideCardImagePreview}
           featuredEvents={homeFeaturedEvents}
           onFeaturedEventsChange={setHomeFeaturedEvents}
         />
@@ -625,6 +655,7 @@ export default function AdminGeneralSettingsForm(props: AdminGeneralSettingsForm
     initialTermsOfServicePdfPath: props.initialTermsOfServicePdfPath,
     initialTermsOfServicePdfUrl: props.initialTermsOfServicePdfUrl,
     initialHomeFeaturedSettings: props.initialHomeFeaturedSettings ?? DEFAULT_HOME_FEATURED_SETTINGS,
+    initialHomeFeaturedSideCardImageUrl: props.initialHomeFeaturedSideCardImageUrl,
     initialHomeFeaturedEvents: props.initialHomeFeaturedEvents ?? [],
     openRouterSettings: props.openRouterSettings,
     sportsSourceSettings: props.sportsSourceSettings,

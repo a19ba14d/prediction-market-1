@@ -23,6 +23,7 @@ import {
 import { DynamicIcon } from 'lucide-react/dynamic'
 import { useExtracted, useLocale } from 'next-intl'
 import dynamic from 'next/dynamic'
+import Image from 'next/image'
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import EventBookmark from '@/app/[locale]/(platform)/event/[slug]/_components/EventBookmark'
 import EventChart from '@/app/[locale]/(platform)/event/[slug]/_components/EventChart'
@@ -1266,18 +1267,21 @@ function SportsScoreboard({
   const awayButton = card?.buttons.find(button => button.marketType === 'moneyline' && button.tone === 'team2') ?? null
   const homeHref = card && homeButton ? resolveFeaturedSportsButtonHref(card, homeButton, linkedHref) : null
   const awayHref = card && awayButton ? resolveFeaturedSportsButtonHref(card, awayButton, linkedHref) : null
-  const teamNameClassName = 'inline-block max-w-full truncate text-sm font-medium underline-offset-2 hover:underline'
+  const teamNameClassName = `
+    inline-block max-w-full truncate text-base font-medium text-muted-foreground/75 underline-offset-2
+    transition-colors hover:text-muted-foreground hover:underline
+  `
   const shouldShowScheduledStart = !scoreboardContent.scoreLabel && !scoreboardContent.showLiveStatus
 
   return (
-    <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 rounded-lg bg-secondary/60 p-3">
-      <div className="min-w-0 text-center">
+    <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-4 px-1 py-2">
+      <div className="min-w-0 justify-self-center text-center">
         {homeLogo && (
           <EventIconImage
             src={homeLogo}
             alt={homeTeam?.name ?? ''}
-            sizes="36px"
-            containerClassName="mx-auto mb-1 size-9 rounded-md"
+            sizes="48px"
+            containerClassName="mx-auto mb-1.5 size-12 rounded-lg"
           />
         )}
         {homeHref
@@ -1286,7 +1290,7 @@ function SportsScoreboard({
                 {homeTeam?.name}
               </AppLink>
             )
-          : <p className="truncate text-sm font-medium">{homeTeam?.name}</p>}
+          : <p className="truncate text-base font-medium text-muted-foreground/75">{homeTeam?.name}</p>}
       </div>
       <div className="text-center">
         {scoreboardContent.scoreLabel
@@ -1320,13 +1324,13 @@ function SportsScoreboard({
           </p>
         )}
       </div>
-      <div className="min-w-0 text-center">
+      <div className="min-w-0 justify-self-center text-center">
         {awayLogo && (
           <EventIconImage
             src={awayLogo}
             alt={awayTeam?.name ?? ''}
-            sizes="36px"
-            containerClassName="mx-auto mb-1 size-9 rounded-md"
+            sizes="48px"
+            containerClassName="mx-auto mb-1.5 size-12 rounded-lg"
           />
         )}
         {awayHref
@@ -1335,7 +1339,7 @@ function SportsScoreboard({
                 {awayTeam?.name}
               </AppLink>
             )
-          : <p className="truncate text-sm font-medium">{awayTeam?.name}</p>}
+          : <p className="truncate text-base font-medium text-muted-foreground/75">{awayTeam?.name}</p>}
       </div>
     </div>
   )
@@ -1402,66 +1406,99 @@ function FeaturedRightRail({
   const t = useExtracted()
   const hasCta = Boolean(sideCard.ctaLabel.trim() && sideCard.ctaHref.trim())
   const sideCardHref = sideCard.ctaHref.trim()
-  const sideCardClassName = `
-    group/side-card relative flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-border/70
-    bg-card p-5 text-card-foreground shadow-md shadow-black/4 transition-all duration-200
-    hover:-translate-y-0.5 hover:border-border hover:shadow-black/8
-    focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none
-  `
-  const sideCardContent = (
-    <>
-      <span className={cn(`
-        pointer-events-none absolute bottom-0 left-[30%] h-px w-[40%] bg-linear-to-r from-transparent via-primary/60
-        to-transparent
-      `)}
-      />
-      <DynamicIcon
-        name={sideCard.icon as IconName}
-        aria-hidden
-        className={cn(`
-          pointer-events-none absolute -top-6 -right-7 size-36 rotate-6 text-primary/8 transition-transform duration-300
-          group-hover/side-card:scale-105
-          motion-safe:animate-pulse
-        `)}
-      />
-
-      <div className="relative z-1 flex min-h-0 flex-1 flex-col pt-7 pb-4">
-        <span
-          className={cn(`
-            mb-3 h-1 w-10 rounded-full bg-primary/70
-            shadow-[0_0_18px_color-mix(in_oklab,var(--primary)_32%,transparent)]
-          `)}
-        />
-        <span className="line-clamp-2 max-w-[16rem] text-xl/tight font-semibold tracking-tight">
-          {sideCard.title}
-        </span>
-        <span className={cn(
-          'mt-5 text-sm/relaxed text-muted-foreground',
-          hasCta ? 'line-clamp-4' : 'line-clamp-5',
-        )}
-        >
-          {sideCard.text}
-        </span>
-
-        {hasCta && (
-          <span
-            className={cn(`
-              mt-auto ml-auto inline-flex h-9 max-w-full items-center gap-1.5 rounded-full border border-border/70
-              bg-background/70 px-3 text-sm font-medium text-foreground shadow-sm shadow-black/4 transition-colors
-              group-hover/side-card:border-primary/35 group-hover/side-card:text-primary
-            `)}
-          >
-            <span className="truncate">{sideCard.ctaLabel}</span>
-            <ChevronRightIcon className="size-4 shrink-0" />
-          </span>
-        )}
-      </div>
-    </>
+  const useImage = Boolean(sideCard.useImage && sideCard.imageUrl.trim())
+  const isClickable = useImage ? Boolean(sideCardHref) : hasCta
+  const sideCardClassName = cn(
+    `
+      group/side-card relative flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-border/70 bg-card
+      text-card-foreground shadow-md shadow-black/4 transition-all duration-200
+      hover:-translate-y-0.5 hover:border-border hover:shadow-black/8
+      focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none
+    `,
+    !useImage && 'p-5',
   )
+  const sideCardContent = useImage
+    ? (
+        <>
+          <Image
+            src={sideCard.imageUrl}
+            alt={sideCard.ctaLabel.trim()}
+            fill
+            sizes="(min-width: 1024px) 32vw, 280px"
+            className="object-cover transition-transform duration-300 group-hover/side-card:scale-[1.02]"
+            unoptimized
+          />
+          {sideCard.ctaLabel.trim() && (
+            <span className={cn(`
+              absolute inset-0 z-1 flex items-end bg-linear-to-t from-black/75 via-black/20 to-transparent p-5
+              text-white opacity-0 transition-opacity duration-200
+              group-hover/side-card:opacity-100
+              group-focus-visible/side-card:opacity-100
+            `)}
+            >
+              <span className="inline-flex min-w-0 items-center gap-1.5 text-sm font-semibold">
+                <span className="line-clamp-2">{sideCard.ctaLabel}</span>
+                {sideCardHref && <ChevronRightIcon className="size-4 shrink-0 text-white/75" />}
+              </span>
+            </span>
+          )}
+        </>
+      )
+    : (
+        <>
+          <span className={cn(`
+            pointer-events-none absolute bottom-0 left-[30%] h-px w-[40%] bg-linear-to-r from-transparent via-primary/60
+            to-transparent
+          `)}
+          />
+          <DynamicIcon
+            name={sideCard.icon as IconName}
+            aria-hidden
+            className={cn(`
+              pointer-events-none absolute -top-6 -right-7 size-36 rotate-6 text-primary/8 transition-transform
+              duration-300
+              group-hover/side-card:scale-105
+              motion-safe:animate-pulse
+            `)}
+          />
+
+          <div className="relative z-1 flex min-h-0 flex-1 flex-col pt-7 pb-4">
+            <span
+              className={cn(`
+                mb-3 h-1 w-10 rounded-full bg-primary/70
+                shadow-[0_0_18px_color-mix(in_oklab,var(--primary)_32%,transparent)]
+              `)}
+            />
+            <span className="line-clamp-2 max-w-[16rem] text-xl/tight font-semibold tracking-tight">
+              {sideCard.title}
+            </span>
+            <span className={cn(
+              'mt-5 text-sm/relaxed text-muted-foreground',
+              hasCta ? 'line-clamp-4' : 'line-clamp-5',
+            )}
+            >
+              {sideCard.text}
+            </span>
+
+            {hasCta && (
+              <span
+                className={cn(`
+                  mt-auto ml-auto inline-flex h-9 max-w-full items-center gap-1.5 rounded-full border border-border/70
+                  bg-background/70 px-3 text-sm font-medium text-foreground shadow-sm shadow-black/4 transition-colors
+                  group-hover/side-card:border-primary/35 group-hover/side-card:text-primary
+                `)}
+              >
+                <span className="truncate">{sideCard.ctaLabel}</span>
+                <ChevronRightIcon className="size-4 shrink-0" />
+              </span>
+            )}
+          </div>
+        </>
+      )
 
   return (
     <aside className="hidden h-[clamp(430px,38vw,480px)] min-w-0 grid-rows-[minmax(0,1fr)_minmax(0,1fr)] gap-4 lg:grid">
-      {hasCta
+      {isClickable
         ? isExternalHref(sideCardHref)
           ? (
               <a
@@ -1489,28 +1526,39 @@ function FeaturedRightRail({
           )}
 
       <div className="min-h-0 overflow-hidden p-1">
-        <div className="mb-3 flex items-center gap-2">
-          <FlameIcon className="size-4 text-no" />
-          <span className="text-lg font-semibold">{t('Hot topics')}</span>
-        </div>
-        <div className="grid gap-3">
+        <AppLink
+          intentPrefetch
+          href="/predictions/trending?_sort=volume"
+          className="group/hot-topics mb-3 inline-flex items-center gap-2 text-foreground/70"
+        >
+          <FlameIcon className="size-4 text-no/60" />
+          <span className="text-lg font-semibold underline-offset-2 group-hover/hot-topics:underline">
+            {t('Hot topics')}
+          </span>
+          <ChevronRightIcon className="size-4 text-muted-foreground/50" />
+        </AppLink>
+        <div className="grid gap-2.5">
           {hotTopics.map((topic, index) => (
             <AppLink
               key={topic.slug}
               intentPrefetch
               href={topic.href}
-              className="group/topic grid grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-3 rounded-md py-0.5"
+              className="group/topic grid grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-2 rounded-md py-0.5"
             >
-              <span className="w-4 text-sm font-medium text-muted-foreground">{index + 1}</span>
-              <span className="truncate text-base font-medium underline-offset-2 group-hover/topic:underline">
+              <span className="w-3.5 text-xs font-medium text-muted-foreground/50">{index + 1}</span>
+              <span className="
+                truncate text-sm font-medium text-muted-foreground/75 underline-offset-2 transition-colors
+                group-hover/topic:text-muted-foreground group-hover/topic:underline
+              "
+              >
                 {topic.label}
               </span>
-              <span className="text-sm text-muted-foreground">
+              <span className="text-xs text-muted-foreground/55">
                 {t('{amount} Vol.', {
                   amount: formatDollarValueLabel(topic.volume24h, { maximumFractionDigits: 0 }),
                 })}
               </span>
-              <ChevronRightIcon className="size-4 text-muted-foreground" />
+              <ChevronRightIcon className="size-3.5 text-muted-foreground/45" />
             </AppLink>
           ))}
         </div>
