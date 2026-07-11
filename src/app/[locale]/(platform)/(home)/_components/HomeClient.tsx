@@ -375,7 +375,7 @@ function HomeClientContent({
                       {t('All markets')}
                     </h1>
 
-                    <div className="min-w-0 md:max-w-xl">
+                    <div className="min-w-0">
                       <FilterToolbar
                         filters={homeFilters}
                         onFiltersChange={handleFiltersChange}
