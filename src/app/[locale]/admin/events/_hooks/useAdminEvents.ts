@@ -20,9 +20,12 @@ export interface AdminEventRow {
   sports_score: string | null
   sports_live: boolean | null
   sports_ended: boolean | null
+  sports_event_date: string | null
+  sports_start_time: string | null
   sports_teams: Array<{ name?: string | null, abbreviation?: string | null }> | null
   sports_sport_slug: string | null
   sports_league_slug: string | null
+  sports_series_slug: string | null
   sports_source_provider: string | null
   sports_source_event_id: string | null
   sports_source_game_id: string | null

@@ -513,9 +513,12 @@ interface AdminEventRow {
   sports_score: string | null
   sports_live: boolean | null
   sports_ended: boolean | null
+  sports_event_date: string | null
+  sports_start_time: string | null
   sports_teams: Array<{ name?: string | null, abbreviation?: string | null }> | null
   sports_sport_slug: string | null
   sports_league_slug: string | null
+  sports_series_slug: string | null
   sports_source_provider: string | null
   sports_source_event_id: string | null
   sports_source_game_id: string | null
@@ -2589,9 +2592,12 @@ export const EventRepository = {
       sports_score: string | null
       sports_live: boolean | null
       sports_ended: boolean | null
+      sports_event_date: string | null
+      sports_start_time: string | null
       sports_teams: Array<{ name?: string | null, abbreviation?: string | null }> | null
       sports_sport_slug: string | null
       sports_league_slug: string | null
+      sports_series_slug: string | null
       sports_source_provider: string | null
       sports_source_event_id: string | null
       sports_source_game_id: string | null
@@ -2626,9 +2632,12 @@ export const EventRepository = {
           sports_score: event_sports.sports_score,
           sports_live: event_sports.sports_live,
           sports_ended: event_sports.sports_ended,
+          sports_event_date: event_sports.sports_event_date,
+          sports_start_time: event_sports.sports_start_time,
           sports_teams: event_sports.sports_teams,
           sports_sport_slug: event_sports.sports_sport_slug,
           sports_league_slug: event_sports.sports_league_slug,
+          sports_series_slug: event_sports.sports_series_slug,
           sports_source_provider: event_sports.sports_source_provider,
           sports_source_event_id: event_sports.sports_source_event_id,
           sports_source_game_id: event_sports.sports_source_game_id,
@@ -2644,9 +2653,12 @@ export const EventRepository = {
           sports_score: row.sports_score ?? null,
           sports_live: row.sports_live ?? null,
           sports_ended: row.sports_ended ?? null,
+          sports_event_date: row.sports_event_date ?? null,
+          sports_start_time: row.sports_start_time?.toISOString?.() ?? null,
           sports_teams: Array.isArray(row.sports_teams) ? row.sports_teams : null,
           sports_sport_slug: row.sports_sport_slug ?? null,
           sports_league_slug: row.sports_league_slug ?? null,
+          sports_series_slug: row.sports_series_slug ?? null,
           sports_source_provider: row.sports_source_provider ?? null,
           sports_source_event_id: row.sports_source_event_id ?? null,
           sports_source_game_id: row.sports_source_game_id ?? null,
@@ -2733,9 +2745,12 @@ export const EventRepository = {
         sports_score: sportsData?.sports_score ?? null,
         sports_live: sportsData?.sports_live ?? null,
         sports_ended: sportsData?.sports_ended ?? null,
+        sports_event_date: sportsData?.sports_event_date ?? null,
+        sports_start_time: sportsData?.sports_start_time ?? null,
         sports_teams: sportsData?.sports_teams ?? null,
         sports_sport_slug: sportsData?.sports_sport_slug ?? null,
         sports_league_slug: sportsData?.sports_league_slug ?? null,
+        sports_series_slug: sportsData?.sports_series_slug ?? null,
         sports_source_provider: sportsData?.sports_source_provider ?? null,
         sports_source_event_id: sportsData?.sports_source_event_id ?? null,
         sports_source_game_id: sportsData?.sports_source_game_id ?? null,
