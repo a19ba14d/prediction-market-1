@@ -1103,7 +1103,7 @@ function ContextTickerItem({
     >
       {(!isNews || !contextItem.faviconUrl) && <ContextAvatar contextItem={contextItem} />}
       <span className="grid min-w-0 gap-0.5">
-        <span className="flex min-w-0 items-center gap-1.5 text-xs font-medium text-muted-foreground">
+        <span className="flex min-w-0 items-center gap-1.5 text-xs font-medium text-muted-foreground/60">
           {isNews && contextItem.faviconUrl && (
             <EventIconImage
               src={contextItem.faviconUrl}
@@ -1116,12 +1116,12 @@ function ContextTickerItem({
           <span className="truncate">{contextItem.source}</span>
           {timeLabel && (
             <>
-              <span className="shrink-0 text-muted-foreground/70">·</span>
+              <span className="shrink-0 text-muted-foreground/50">·</span>
               <span className="shrink-0">{timeLabel}</span>
             </>
           )}
         </span>
-        <span className="line-clamp-2 text-xs/snug text-foreground">
+        <span className="line-clamp-2 text-xs/snug text-muted-foreground/75">
           {contextItem.title}
         </span>
       </span>
@@ -1154,11 +1154,16 @@ function ContextTicker({
     : undefined
 
   return (
-    <div className="relative min-h-0 flex-1 overflow-hidden border-t border-border/50 pt-3">
+    <div className="group/context relative min-h-0 flex-1 overflow-hidden border-t border-border/50 pt-3">
       <div
         className={cn(
           item.contextItems.length > 1
-          && 'grid animate-[home-featured-context-ticker_16s_linear_infinite] gap-2 motion-reduce:animate-none',
+          && `
+            grid animate-[home-featured-context-ticker_16s_linear_infinite] gap-2
+            group-focus-within/context:paused
+            group-hover/context:paused
+            motion-reduce:animate-none
+          `,
         )}
         style={tickerStyle}
       >
