@@ -1290,7 +1290,7 @@ function SportsScoreboard({
                 {homeTeam?.name}
               </AppLink>
             )
-          : <p className="truncate text-base font-medium text-muted-foreground/75">{homeTeam?.name}</p>}
+          : <p className="truncate text-base font-medium text-foreground/90">{homeTeam?.name}</p>}
       </div>
       <div className="text-center">
         {scoreboardContent.scoreLabel
@@ -1339,7 +1339,7 @@ function SportsScoreboard({
                 {awayTeam?.name}
               </AppLink>
             )
-          : <p className="truncate text-base font-medium text-muted-foreground/75">{awayTeam?.name}</p>}
+          : <p className="truncate text-base font-medium text-foreground/90">{awayTeam?.name}</p>}
       </div>
     </div>
   )
@@ -1529,10 +1529,10 @@ function FeaturedRightRail({
         <AppLink
           intentPrefetch
           href="/predictions/trending?_sort=volume"
-          className="group/hot-topics mb-3 inline-flex items-center gap-2 text-foreground/70"
+          className="group/hot-topics mb-3 inline-flex items-center gap-2 text-foreground"
         >
-          <FlameIcon className="size-4 text-no/60" />
-          <span className="text-lg font-semibold underline-offset-2 group-hover/hot-topics:underline">
+          <FlameIcon className="size-4 text-no/85" />
+          <span className="text-lg font-semibold tracking-tight underline-offset-2 group-hover/hot-topics:underline">
             {t('Hot topics')}
           </span>
           <ChevronRightIcon className="size-4 text-muted-foreground/50" />
@@ -1545,20 +1545,24 @@ function FeaturedRightRail({
               href={topic.href}
               className="group/topic grid grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-2 rounded-md py-0.5"
             >
-              <span className="w-3.5 text-xs font-medium text-muted-foreground/50">{index + 1}</span>
+              <span className="w-3.5 text-xs font-medium text-muted-foreground/65 tabular-nums">{index + 1}</span>
               <span className="
-                truncate text-sm font-medium text-muted-foreground/75 underline-offset-2 transition-colors
-                group-hover/topic:text-muted-foreground group-hover/topic:underline
+                truncate text-sm font-medium text-foreground/90 underline-offset-2 transition-colors
+                group-hover/topic:text-foreground group-hover/topic:underline
               "
               >
                 {topic.label}
               </span>
-              <span className="text-xs text-muted-foreground/55">
+              <span className="text-xs text-muted-foreground/70 tabular-nums">
                 {t('{amount} Vol.', {
                   amount: formatDollarValueLabel(topic.volume24h, { maximumFractionDigits: 0 }),
                 })}
               </span>
-              <ChevronRightIcon className="size-3.5 text-muted-foreground/45" />
+              <ChevronRightIcon className={cn(`
+                size-3.5 text-muted-foreground/60 transition-transform
+                group-hover/topic:translate-x-0.5
+              `)}
+              />
             </AppLink>
           ))}
         </div>

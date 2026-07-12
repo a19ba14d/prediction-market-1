@@ -212,6 +212,11 @@
 
   body {
     @apply bg-background text-foreground;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    font-kerning: normal;
+    font-synthesis: none;
+    text-rendering: optimizeLegibility;
   }
 
   button:not([disabled]),

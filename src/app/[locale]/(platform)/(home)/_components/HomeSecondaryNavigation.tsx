@@ -221,7 +221,7 @@ export default function HomeSecondaryNavigation({
                 'hover:bg-transparent dark:hover:bg-transparent',
                 resolvedActiveSubtagSlug === item.slug
                   ? 'text-primary hover:text-primary'
-                  : 'text-muted-foreground hover:text-foreground',
+                  : 'text-foreground/65 hover:text-foreground',
               )}
             >
               {item.label}
