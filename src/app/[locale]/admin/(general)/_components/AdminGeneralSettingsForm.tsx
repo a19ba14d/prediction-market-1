@@ -1,10 +1,11 @@
 'use client'
 
+import type { GeneralSettingsActionState } from '@/app/[locale]/admin/(general)/_actions/update-general-settings'
 import type { AdminThemeSiteSettingsInitialState } from '@/app/[locale]/admin/theme/_types/theme-form-state'
 import type { CustomJavascriptCodeConfig, CustomJavascriptCodeDisablePage } from '@/lib/custom-javascript-code'
 import type { HomeFeaturedEventAdminItem, HomeFeaturedSettings } from '@/types'
 import { useExtracted } from 'next-intl'
-import { useActionState, useEffect, useMemo, useRef, useState, useTransition } from 'react'
+import { useActionState, useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import { toast } from 'sonner'
 import {
   removeTermsOfServicePdfAction,
@@ -15,6 +16,7 @@ import { InputError } from '@/components/ui/input-error'
 import { serializeCustomJavascriptCodes } from '@/lib/custom-javascript-code'
 import { serializeHomeFeaturedEventsForSave } from '@/lib/home-featured-payload'
 import { DEFAULT_HOME_FEATURED_SETTINGS } from '@/lib/home-featured-settings'
+import { optimizeSideCardImage } from '@/lib/side-card-image-client'
 import { sanitizeSvg } from '@/lib/utils'
 import BrandIdentitySection from './BrandIdentitySection'
 import GlobalAnnouncementSection from './GlobalAnnouncementSection'
@@ -24,7 +26,7 @@ import LegalSection from './LegalSection'
 import MarketFeeSection from './MarketFeeSection'
 import SocialCommunitySection from './SocialCommunitySection'
 
-const initialState = {
+const initialState: GeneralSettingsActionState = {
   error: null,
 }
 
@@ -147,7 +149,21 @@ function AdminGeneralSettingsFormInner({
   const initialHomeFeaturedIncludeNewEvents = resolvedInitialHomeFeaturedSettings.includeNewEvents
   const initialHomeFeaturedSideCard = resolvedInitialHomeFeaturedSettings.sideCard
 
-  const [state, formAction, isPending] = useActionState(updateGeneralSettingsAction, initialState)
+  const optimizedSideCardImageRef = useRef<File | null>(null)
+  const sideCardImageInputRef = useRef<HTMLInputElement>(null)
+  const sideCardImageProcessingRequestRef = useRef(0)
+  const submitGeneralSettingsAction = useCallback(
+    (previousState: GeneralSettingsActionState, formData: FormData) => {
+      formData.delete('home_featured_side_card_image')
+      if (formData.get('home_featured_side_card_use_image') === 'true' && optimizedSideCardImageRef.current) {
+        formData.set('home_featured_side_card_image', optimizedSideCardImageRef.current)
+      }
+
+      return updateGeneralSettingsAction(previousState, formData)
+    },
+    [],
+  )
+  const [state, formAction, isPending] = useActionState(submitGeneralSettingsAction, initialState)
   const [isRemovingTermsOfServicePdf, startRemovingTermsOfServicePdf] = useTransition()
   const wasPendingRef = useRef(isPending)
   const nextCustomJavascriptCodeIdRef = useRef(0)
@@ -210,7 +226,14 @@ function AdminGeneralSettingsFormInner({
   const [pwaIcon192PreviewUrl, setPwaIcon192PreviewUrl] = useState<string | null>(null)
   const [pwaIcon512PreviewUrl, setPwaIcon512PreviewUrl] = useState<string | null>(null)
   const [sideCardImagePreviewUrl, setSideCardImagePreviewUrl] = useState<string | null>(null)
+  const [isSideCardImageProcessing, setIsSideCardImageProcessing] = useState(false)
   const [openSections, setOpenSections] = useState<string[]>([])
+
+  useEffect(function cancelPendingSideCardImageProcessing() {
+    return function cleanup() {
+      sideCardImageProcessingRequestRef.current += 1
+    }
+  }, [])
 
   useEffect(function revokeObjectUrls() {
     return function cleanup() {
@@ -233,6 +256,10 @@ function AdminGeneralSettingsFormInner({
     const transitionedToIdle = wasPendingRef.current && !isPending
 
     if (transitionedToIdle && state.error === null) {
+      optimizedSideCardImageRef.current = null
+      if (sideCardImageInputRef.current) {
+        sideCardImageInputRef.current.value = ''
+      }
       toast.success(t('Settings saved successfully!'))
     }
     else if (transitionedToIdle && state.error) {
@@ -304,12 +331,48 @@ function AdminGeneralSettingsFormInner({
     setBlockedCountries([])
   }
 
-  function handleSideCardImageChange(file: File | null) {
+  async function handleSideCardImageChange(file: File | null) {
+    const requestId = ++sideCardImageProcessingRequestRef.current
+    optimizedSideCardImageRef.current = null
+
     if (sideCardImagePreviewUrl) {
       URL.revokeObjectURL(sideCardImagePreviewUrl)
     }
+    setSideCardImagePreviewUrl(null)
 
-    setSideCardImagePreviewUrl(file ? URL.createObjectURL(file) : null)
+    if (!file) {
+      setIsSideCardImageProcessing(false)
+      return
+    }
+
+    setIsSideCardImageProcessing(true)
+    try {
+      const optimizedFile = await optimizeSideCardImage(file)
+      if (requestId !== sideCardImageProcessingRequestRef.current) {
+        return
+      }
+
+      const previewUrl = URL.createObjectURL(optimizedFile)
+      optimizedSideCardImageRef.current = optimizedFile
+      setSideCardImagePreviewUrl(previewUrl)
+    }
+    catch (error) {
+      if (requestId !== sideCardImageProcessingRequestRef.current) {
+        return
+      }
+
+      console.error('Failed to optimize side card image', error)
+      optimizedSideCardImageRef.current = null
+      if (sideCardImageInputRef.current) {
+        sideCardImageInputRef.current.value = ''
+      }
+      toast.error(t('Could not process the side card image. Please try another image.'))
+    }
+    finally {
+      if (requestId === sideCardImageProcessingRequestRef.current) {
+        setIsSideCardImageProcessing(false)
+      }
+    }
   }
 
   function toggleSection(value: string) {
@@ -469,13 +532,14 @@ function AdminGeneralSettingsFormInner({
       <input type="hidden" name="home_featured_side_card_use_image" value={String(homeFeaturedSideCard.useImage)} />
       <input type="hidden" name="home_featured_side_card_image_path" value={homeFeaturedSideCard.imagePath} />
       <input
+        ref={sideCardImageInputRef}
         id="home-featured-side-card-image-file"
         type="file"
         name="home_featured_side_card_image"
         accept="image/png,image/jpeg"
-        disabled={isPending}
+        disabled={isPending || isSideCardImageProcessing}
         className="sr-only"
-        onChange={event => handleSideCardImageChange(event.target.files?.[0] ?? null)}
+        onChange={event => void handleSideCardImageChange(event.target.files?.[0] ?? null)}
       />
       <input type="hidden" name="home_featured_events_json" value={serializedHomeFeaturedEvents} />
 
@@ -549,7 +613,7 @@ function AdminGeneralSettingsFormInner({
 
         <HomeFeaturedMarketsSection
           locale={locale}
-          isPending={isPending}
+          isPending={isPending || isSideCardImageProcessing}
           openSections={openSections}
           onToggleSection={toggleSection}
           enabled={homeFeaturedEnabled}
@@ -638,7 +702,11 @@ function AdminGeneralSettingsFormInner({
       {state.error && <InputError message={state.error} />}
 
       <div className="flex justify-end">
-        <Button type="submit" className="w-full sm:w-40" disabled={isPending || isRemovingTermsOfServicePdf}>
+        <Button
+          type="submit"
+          className="w-full sm:w-40"
+          disabled={isPending || isRemovingTermsOfServicePdf || isSideCardImageProcessing}
+        >
           {isPending ? t('Saving...') : t('Save settings')}
         </Button>
       </div>
