@@ -6,6 +6,7 @@ import { inflateSync } from 'node:zlib'
 import { getLocale } from 'next-intl/server'
 import { revalidatePath } from 'next/cache'
 import { DEFAULT_LOCALE, SUPPORTED_LOCALES } from '@/i18n/locales'
+import { validateMarketContextSettingsInput } from '@/lib/ai/market-context-config'
 import { cacheTags } from '@/lib/cache-tags'
 import { DEFAULT_ERROR_MESSAGE } from '@/lib/constants'
 import { SettingsRepository } from '@/lib/db/queries/settings'
@@ -575,13 +576,20 @@ async function revalidateGeneralSettingsPaths() {
   await updateCacheTag(cacheTags.homeFeaturedEvents)
   revalidatePath('/[locale]/admin', 'page')
   revalidatePath('/[locale]/admin/theme', 'page')
-  revalidatePath('/[locale]/admin/market-context', 'page')
   revalidatePath('/[locale]/tos', 'page')
   revalidatePath('/[locale]', 'page')
   revalidatePath('/', 'page')
   for (const locale of SUPPORTED_LOCALES) {
     revalidatePath(`/${locale}`, 'page')
   }
+}
+
+async function revalidateMarketContextPaths() {
+  revalidatePath('/[locale]/event/[slug]', 'page')
+  revalidatePath('/[locale]/event/[slug]/[market]', 'page')
+  revalidatePath('/[locale]/sports/[sport]/[event]', 'page')
+  revalidatePath('/[locale]/sports/[sport]/[event]/[market]', 'page')
+  revalidatePath('/[locale]/esports/[sport]/[...slugParts]', 'page')
 }
 
 async function runOptionalGeneralSettingsTask(label: string, task: () => Promise<void>) {
@@ -666,6 +674,8 @@ async function updateGeneralSettingsActionImpl(
   const lifiApiKeyRaw = formData.get('lifi_api_key')
   const openRouterModelRaw = formData.get('openrouter_model')
   const openRouterApiKeyRaw = formData.get('openrouter_api_key')
+  const marketContextEnabledRaw = formData.get('market_context_enabled')
+  const marketContextPromptRaw = formData.get('market_context_prompt')
   const sportsPandaScoreTokenRaw = formData.get('sports_pandascore_token')
   const sportsTheSportsDbApiKeyRaw = formData.get('sports_thesportsdb_api_key')
   const blockedCountriesRaw = formData.get('blocked_countries')
@@ -688,6 +698,8 @@ async function updateGeneralSettingsActionImpl(
   const homeFeaturedSideCardImagePathRaw = formData.get('home_featured_side_card_image_path')
   const homeFeaturedSideCardImageFileRaw = formData.get('home_featured_side_card_image')
   const homeFeaturedEventsJsonRaw = formData.get('home_featured_events_json')
+  const hasMarketContextPayload = typeof marketContextEnabledRaw === 'string'
+    && typeof marketContextPromptRaw === 'string'
   const hasHomeFeaturedSettingsPayload = typeof homeFeaturedEnabledRaw === 'string'
   const hasHomeFeaturedEventsPayload = typeof homeFeaturedEventsJsonRaw === 'string'
 
@@ -738,6 +750,18 @@ async function updateGeneralSettingsActionImpl(
   }
   if (sportsTheSportsDbApiKey.length > 512) {
     return { error: 'TheSportsDB API key is too long.' }
+  }
+
+  let validatedMarketContextData: ReturnType<typeof validateMarketContextSettingsInput>['data'] = null
+  if (hasMarketContextPayload) {
+    const validatedMarketContext = validateMarketContextSettingsInput({
+      enabled: typeof marketContextEnabledRaw === 'string' ? marketContextEnabledRaw : undefined,
+      prompt: typeof marketContextPromptRaw === 'string' ? marketContextPromptRaw : '',
+    })
+    if (!validatedMarketContext.data) {
+      return { error: validatedMarketContext.error ?? 'Invalid market context settings.' }
+    }
+    validatedMarketContextData = validatedMarketContext.data
   }
 
   const validatedGlobalAnnouncement = validateGlobalAnnouncementInput({
@@ -940,6 +964,12 @@ async function updateGeneralSettingsActionImpl(
     { group: 'general', key: 'lifi_api_key', value: encryptedLiFiApiKey },
     { group: 'ai', key: 'openrouter_model', value: openRouterModel },
     { group: 'ai', key: 'openrouter_api_key', value: encryptedOpenRouterApiKey },
+    ...(validatedMarketContextData
+      ? [
+          { group: 'ai', key: 'market_context_prompt', value: validatedMarketContextData.prompt },
+          { group: 'ai', key: 'market_context_enabled', value: validatedMarketContextData.enabled ? 'true' : 'false' },
+        ]
+      : []),
     { group: 'ai', key: 'sports_pandascore_token', value: encryptedSportsPandaScoreToken },
     { group: 'ai', key: 'sports_thesportsdb_api_key', value: encryptedSportsTheSportsDbApiKey },
     ...(validatedHomeFeaturedData ? buildHomeFeaturedSettingsUpdateRows(validatedHomeFeaturedData) : []),
@@ -977,6 +1007,10 @@ async function updateGeneralSettingsActionImpl(
   }
 
   await runOptionalGeneralSettingsTask('revalidate general settings paths', revalidateGeneralSettingsPaths)
+
+  if (validatedMarketContextData) {
+    await runOptionalGeneralSettingsTask('revalidate market context paths', revalidateMarketContextPaths)
+  }
 
   await runOptionalGeneralSettingsTask('report operator domain snapshot', reportOperatorDomainSnapshot)
 
