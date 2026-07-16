@@ -3,6 +3,7 @@
 import type { AppKit } from '@reown/appkit'
 import type { SIWECreateMessageArgs, SIWESession, SIWEVerifyMessageArgs } from '@reown/appkit-siwe'
 import type { ReactNode } from 'react'
+import type { Config } from 'wagmi'
 import type { User } from '@/types'
 import { createSIWEConfig, formatMessage, getAddressFromMessage, getDidAddress } from '@reown/appkit-siwe'
 import { createAppKit, useAppKitTheme } from '@reown/appkit/react'
@@ -11,7 +12,7 @@ import { useTheme } from 'next-themes'
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { toast } from 'sonner'
 import { getAddress, isAddress } from 'viem'
-import { WagmiProvider } from 'wagmi'
+import { cookieToInitialState, WagmiProvider } from 'wagmi'
 import { SignaturePromptHost } from '@/components/SignaturePromptHost'
 import { AppKitContext, defaultAppKitValue } from '@/hooks/useAppKit'
 import { useHasHydrated } from '@/hooks/useHasHydrated'
@@ -22,6 +23,7 @@ import { createAppKitWagmiAdapter, defaultNetwork, networks } from '@/lib/appkit
 import { authClient } from '@/lib/auth-client'
 import { IS_BROWSER } from '@/lib/constants'
 import { clearBrowserStorage, clearNonHttpOnlyCookies } from '@/lib/utils'
+import { WAGMI_STATE_COOKIE_NAME } from '@/lib/wagmi-storage'
 import { mergeSessionUserState, useUser } from '@/stores/useUser'
 
 let hasInitializedAppKit = false
@@ -333,11 +335,7 @@ function initializeAppKitSingleton(
             })
 
             if (error) {
-              logSiweVerificationFailure('Better Auth rejected SIWE verification', {
-                address,
-                chainId: defaultNetwork.id,
-                error,
-              })
+              return false
             }
 
             return Boolean(data?.success)
@@ -528,7 +526,7 @@ function useAppKitContextValue({
   }), [hasAuthenticatedUser, instance, regionBlockedMessage])
 }
 
-export default function AppKitProvider({ children }: { children: ReactNode }) {
+export default function AppKitProvider({ children, wagmiCookie }: { children: ReactNode, wagmiCookie: string | null }) {
   const t = useExtracted()
   const site = useSiteIdentity()
   const { reownAppKitProjectId, siteUrl } = usePublicRuntimeConfig()
@@ -540,7 +538,14 @@ export default function AppKitProvider({ children }: { children: ReactNode }) {
     () => createAppKitWagmiAdapter(reownAppKitProjectId),
     [reownAppKitProjectId],
   )
-  const wagmiConfig = wagmiAdapter.wagmiConfig
+  const wagmiConfig = wagmiAdapter.wagmiConfig as Config
+  const initialState = useMemo(
+    () => cookieToInitialState(
+      wagmiConfig,
+      wagmiCookie ? `${WAGMI_STATE_COOKIE_NAME}=${wagmiCookie}` : null,
+    ),
+    [wagmiConfig, wagmiCookie],
+  )
   const instance = useAppKitInstance({
     appKitThemeMode,
     projectId: reownAppKitProjectId,
@@ -558,7 +563,7 @@ export default function AppKitProvider({ children }: { children: ReactNode }) {
   const canSyncTheme = Boolean(instance)
 
   return (
-    <WagmiProvider config={wagmiConfig}>
+    <WagmiProvider config={wagmiConfig} initialState={initialState}>
       <AppKitContext value={appKitValue}>
         <PolymarketWalletConnectionRestorer />
         {children}
