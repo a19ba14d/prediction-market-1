@@ -25,6 +25,7 @@ import { useExtracted, useLocale } from 'next-intl'
 import dynamic from 'next/dynamic'
 import Image from 'next/image'
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { flushSync } from 'react-dom'
 import EventBookmark from '@/app/[locale]/(platform)/event/[slug]/_components/EventBookmark'
 import EventChart from '@/app/[locale]/(platform)/event/[slug]/_components/EventChart'
 import EventMarketChannelProvider from '@/app/[locale]/(platform)/event/[slug]/_components/EventMarketChannelProvider'
@@ -2043,7 +2044,23 @@ export default function HomeFeaturedEventsCarousel({
       return
     }
 
-    setActiveIndex((nextIndex + items.length) % items.length)
+    function updateActiveIndex() {
+      setActiveIndex((nextIndex + items.length) % items.length)
+    }
+
+    if (!document.startViewTransition || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      updateActiveIndex()
+      return
+    }
+
+    document.startViewTransition({
+      update: () => {
+        // View Transitions must commit the new layout before the browser captures its destination size.
+        // eslint-disable-next-line react/dom-no-flush-sync
+        flushSync(updateActiveIndex)
+      },
+      types: ['home-featured-navigation'],
+    })
   }
 
   return (
@@ -2130,20 +2147,54 @@ export default function HomeFeaturedEventsCarousel({
                   <Button
                     type="button"
                     variant="secondary"
-                    className="h-10 rounded-full px-3 text-muted-foreground hover:text-muted-foreground md:px-4"
+                    className="
+                      group h-10 overflow-visible rounded-full bg-transparent p-0 text-muted-foreground shadow-none
+                      hover:bg-transparent hover:text-muted-foreground
+                    "
                     onClick={() => goToIndex(activeIndex - 1)}
                   >
-                    <ChevronLeftIcon className="size-4" />
-                    <span className="hidden max-w-44 truncate text-xs md:inline">{activeItem.previousTitle}</span>
+                    <span
+                      data-featured-navigation-shell="previous"
+                      className="
+                        relative inline-flex h-10 max-w-60 min-w-10 items-center overflow-hidden rounded-full
+                        bg-secondary text-muted-foreground shadow-xs
+                        group-hover:bg-secondary/80
+                      "
+                    >
+                      <span
+                        data-featured-navigation-content="previous"
+                        className="inline-flex h-10 min-w-10 items-center gap-2 px-3 md:px-4"
+                      >
+                        <ChevronLeftIcon className="size-4" />
+                        <span className="hidden max-w-44 truncate text-xs md:block">{activeItem.previousTitle}</span>
+                      </span>
+                    </span>
                   </Button>
                   <Button
                     type="button"
                     variant="secondary"
-                    className="h-10 rounded-full px-3 text-muted-foreground hover:text-muted-foreground md:px-4"
+                    className="
+                      group h-10 overflow-visible rounded-full bg-transparent p-0 text-muted-foreground shadow-none
+                      hover:bg-transparent hover:text-muted-foreground
+                    "
                     onClick={() => goToIndex(activeIndex + 1)}
                   >
-                    <span className="hidden max-w-44 truncate text-xs md:inline">{activeItem.nextTitle}</span>
-                    <ChevronRightIcon className="size-4" />
+                    <span
+                      data-featured-navigation-shell="next"
+                      className="
+                        relative inline-flex h-10 max-w-60 min-w-10 items-center overflow-hidden rounded-full
+                        bg-secondary text-muted-foreground shadow-xs
+                        group-hover:bg-secondary/80
+                      "
+                    >
+                      <span
+                        data-featured-navigation-content="next"
+                        className="inline-flex h-10 min-w-10 items-center gap-2 px-3 md:px-4"
+                      >
+                        <span className="hidden max-w-44 truncate text-xs md:block">{activeItem.nextTitle}</span>
+                        <ChevronRightIcon className="size-4" />
+                      </span>
+                    </span>
                   </Button>
                 </div>
               </div>

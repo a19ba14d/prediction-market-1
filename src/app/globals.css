@@ -197,6 +197,75 @@
   }
 }
 
+@keyframes home-featured-navigation-content-out {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes home-featured-navigation-content-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+html:active-view-transition-type(home-featured-navigation) {
+  view-transition-name: none;
+}
+
+[data-featured-navigation-shell='previous'] {
+  view-transition-name: home-featured-navigation-previous-shell;
+}
+
+[data-featured-navigation-content='previous'] {
+  view-transition-name: home-featured-navigation-previous-content;
+}
+
+[data-featured-navigation-shell='next'] {
+  view-transition-name: home-featured-navigation-next-shell;
+}
+
+[data-featured-navigation-content='next'] {
+  view-transition-name: home-featured-navigation-next-content;
+}
+
+::view-transition-group(home-featured-navigation-previous-shell),
+::view-transition-group(home-featured-navigation-previous-content),
+::view-transition-group(home-featured-navigation-next-shell),
+::view-transition-group(home-featured-navigation-next-content) {
+  animation-duration: 340ms;
+  animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+::view-transition-old(home-featured-navigation-previous-content),
+::view-transition-old(home-featured-navigation-next-content) {
+  animation: home-featured-navigation-content-out 90ms ease-out both;
+  mix-blend-mode: normal;
+}
+
+::view-transition-new(home-featured-navigation-previous-content),
+::view-transition-new(home-featured-navigation-next-content) {
+  animation: home-featured-navigation-content-in 140ms ease-out 340ms both;
+  mix-blend-mode: normal;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(home-featured-navigation-previous-shell),
+  ::view-transition-group(home-featured-navigation-previous-content),
+  ::view-transition-group(home-featured-navigation-next-shell),
+  ::view-transition-group(home-featured-navigation-next-content),
+  ::view-transition-old(home-featured-navigation-previous-content),
+  ::view-transition-old(home-featured-navigation-next-content),
+  ::view-transition-new(home-featured-navigation-previous-content),
+  ::view-transition-new(home-featured-navigation-next-content) {
+    animation: none;
+  }
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
