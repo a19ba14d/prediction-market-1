@@ -233,6 +233,7 @@ export function useLiveSeriesWebSocket({
       connect,
       getWebSocket: () => ws,
       isActive: () => isActive,
+      reconnectOnVisible: true,
       resetWebSocket: () => {
         ws = null
       },

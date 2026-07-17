@@ -244,6 +244,10 @@ function isExternalHref(href: string) {
   return /^https?:\/\//i.test(href)
 }
 
+function requiresDocumentNavigation(href: string) {
+  return /^\/docs(?:[/?#]|$)/i.test(href)
+}
+
 function resolveFeaturedBreadcrumbItems(item: HomeFeaturedEventCard) {
   const event = item.event
   const mainCategory = event.tags.find(tag => tag.isMainCategory) ?? null
@@ -1409,6 +1413,7 @@ function FeaturedRightRailSingle({
   const t = useExtracted()
   const hasCta = Boolean(sideCard.ctaLabel.trim() && sideCard.ctaHref.trim())
   const sideCardHref = sideCard.ctaHref.trim()
+  const shouldUseDocumentNavigation = requiresDocumentNavigation(sideCardHref)
   const useImage = Boolean(sideCard.useImage && sideCard.imageUrl.trim())
   const isClickable = useImage ? Boolean(sideCardHref) : hasCta
   const sideCardClassName = cn(
@@ -1517,15 +1522,24 @@ function FeaturedRightRailSingle({
                 {sideCardContent}
               </a>
             )
-          : (
-              <AppLink
-                intentPrefetch
-                href={sideCardHref}
-                className={sideCardClassName}
-              >
-                {sideCardContent}
-              </AppLink>
-            )
+          : shouldUseDocumentNavigation
+            ? (
+                <a
+                  href={sideCardHref}
+                  className={sideCardClassName}
+                >
+                  {sideCardContent}
+                </a>
+              )
+            : (
+                <AppLink
+                  intentPrefetch
+                  href={sideCardHref}
+                  className={sideCardClassName}
+                >
+                  {sideCardContent}
+                </AppLink>
+              )
         : (
             <div className={sideCardClassName}>
               {sideCardContent}
@@ -1679,7 +1693,9 @@ function FeaturedSideCardSlide({
 
   return isExternalHref(href)
     ? <a href={href} target="_blank" rel="noreferrer" className={className}>{content}</a>
-    : <AppLink intentPrefetch href={href} className={className}>{content}</AppLink>
+    : requiresDocumentNavigation(href)
+      ? <a href={href} className={className}>{content}</a>
+      : <AppLink intentPrefetch href={href} className={className}>{content}</AppLink>
 }
 
 function FeaturedRightRail({ hotTopics, sideCard }: { hotTopics: HomeFeaturedHotTopic[], sideCard: HomeFeaturedSideCardSettings }) {
@@ -2161,12 +2177,14 @@ export default function HomeFeaturedEventsCarousel({
                         group-hover:bg-secondary/80
                       "
                     >
-                      <span
-                        data-featured-navigation-content="previous"
-                        className="inline-flex h-10 min-w-10 items-center gap-2 px-3 md:px-4"
-                      >
+                      <span className="inline-flex h-10 min-w-10 items-center gap-2 px-3 md:px-4">
                         <ChevronLeftIcon className="size-4" />
-                        <span className="hidden max-w-44 truncate text-xs md:block">{activeItem.previousTitle}</span>
+                        <span
+                          data-featured-navigation-text="previous"
+                          className="hidden max-w-44 truncate text-xs md:block"
+                        >
+                          {activeItem.previousTitle}
+                        </span>
                       </span>
                     </span>
                   </Button>
@@ -2187,11 +2205,13 @@ export default function HomeFeaturedEventsCarousel({
                         group-hover:bg-secondary/80
                       "
                     >
-                      <span
-                        data-featured-navigation-content="next"
-                        className="inline-flex h-10 min-w-10 items-center gap-2 px-3 md:px-4"
-                      >
-                        <span className="hidden max-w-44 truncate text-xs md:block">{activeItem.nextTitle}</span>
+                      <span className="inline-flex h-10 min-w-10 items-center gap-2 px-3 md:px-4">
+                        <span
+                          data-featured-navigation-text="next"
+                          className="hidden max-w-44 truncate text-xs md:block"
+                        >
+                          {activeItem.nextTitle}
+                        </span>
                         <ChevronRightIcon className="size-4" />
                       </span>
                     </span>

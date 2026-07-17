@@ -209,4 +209,24 @@ describe('useLiveSeriesWebSocket', () => {
       timestamp: eventEndTimestamp - 1,
     })
   })
+
+  it('replaces an apparently open socket when the tab becomes visible again', () => {
+    const hiddenSpy = vi.spyOn(document, 'hidden', 'get').mockReturnValue(false)
+    const { socket } = mountHook()
+
+    act(() => {
+      document.dispatchEvent(new Event('visibilitychange'))
+    })
+
+    expect(socket.readyState).toBe(MockWebSocket.CLOSED)
+    expect(MockWebSocket.instances).toHaveLength(2)
+
+    const resumedSocket = MockWebSocket.instances[1]!
+    act(() => resumedSocket.emitOpen())
+
+    expect(JSON.parse(resumedSocket.sentMessages[0]!)).toMatchObject({
+      action: 'subscribe',
+    })
+    hiddenSpy.mockRestore()
+  })
 })

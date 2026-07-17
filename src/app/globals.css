@@ -197,13 +197,13 @@
   }
 }
 
-@keyframes home-featured-navigation-content-out {
+@keyframes home-featured-navigation-text-out {
   to {
     opacity: 0;
   }
 }
 
-@keyframes home-featured-navigation-content-in {
+@keyframes home-featured-navigation-text-in {
   from {
     opacity: 0;
   }
@@ -221,47 +221,47 @@ html:active-view-transition-type(home-featured-navigation) {
   view-transition-name: home-featured-navigation-previous-shell;
 }
 
-[data-featured-navigation-content='previous'] {
-  view-transition-name: home-featured-navigation-previous-content;
+[data-featured-navigation-text='previous'] {
+  view-transition-name: home-featured-navigation-previous-text;
 }
 
 [data-featured-navigation-shell='next'] {
   view-transition-name: home-featured-navigation-next-shell;
 }
 
-[data-featured-navigation-content='next'] {
-  view-transition-name: home-featured-navigation-next-content;
+[data-featured-navigation-text='next'] {
+  view-transition-name: home-featured-navigation-next-text;
 }
 
 ::view-transition-group(home-featured-navigation-previous-shell),
-::view-transition-group(home-featured-navigation-previous-content),
+::view-transition-group(home-featured-navigation-previous-text),
 ::view-transition-group(home-featured-navigation-next-shell),
-::view-transition-group(home-featured-navigation-next-content) {
+::view-transition-group(home-featured-navigation-next-text) {
   animation-duration: 340ms;
   animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-::view-transition-old(home-featured-navigation-previous-content),
-::view-transition-old(home-featured-navigation-next-content) {
-  animation: home-featured-navigation-content-out 90ms ease-out both;
+::view-transition-old(home-featured-navigation-previous-text),
+::view-transition-old(home-featured-navigation-next-text) {
+  animation: home-featured-navigation-text-out 90ms ease-out both;
   mix-blend-mode: normal;
 }
 
-::view-transition-new(home-featured-navigation-previous-content),
-::view-transition-new(home-featured-navigation-next-content) {
-  animation: home-featured-navigation-content-in 140ms ease-out 340ms both;
+::view-transition-new(home-featured-navigation-previous-text),
+::view-transition-new(home-featured-navigation-next-text) {
+  animation: home-featured-navigation-text-in 140ms ease-out 340ms both;
   mix-blend-mode: normal;
 }
 
 @media (prefers-reduced-motion: reduce) {
   ::view-transition-group(home-featured-navigation-previous-shell),
-  ::view-transition-group(home-featured-navigation-previous-content),
+  ::view-transition-group(home-featured-navigation-previous-text),
   ::view-transition-group(home-featured-navigation-next-shell),
-  ::view-transition-group(home-featured-navigation-next-content),
-  ::view-transition-old(home-featured-navigation-previous-content),
-  ::view-transition-old(home-featured-navigation-next-content),
-  ::view-transition-new(home-featured-navigation-previous-content),
-  ::view-transition-new(home-featured-navigation-next-content) {
+  ::view-transition-group(home-featured-navigation-next-text),
+  ::view-transition-old(home-featured-navigation-previous-text),
+  ::view-transition-old(home-featured-navigation-next-text),
+  ::view-transition-new(home-featured-navigation-previous-text),
+  ::view-transition-new(home-featured-navigation-next-text) {
     animation: none;
   }
 }
