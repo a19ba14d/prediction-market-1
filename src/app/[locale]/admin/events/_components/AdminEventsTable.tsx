@@ -1,7 +1,7 @@
 'use client'
 
 import { useQueryClient } from '@tanstack/react-query'
-import { CircleAlertIcon, FilterIcon, Loader2Icon, SearchIcon, SettingsIcon, XIcon } from 'lucide-react'
+import { FilterIcon, Loader2Icon, SearchIcon, SettingsIcon, XIcon } from 'lucide-react'
 import { useExtracted } from 'next-intl'
 import { useCallback, useRef, useState } from 'react'
 import { toast } from 'sonner'
@@ -1384,6 +1384,23 @@ export default function AdminEventsTable({
                 disabled={isSavingSportsFinal}
                 inputMode="numeric"
               />
+              <p className="text-xs text-muted-foreground">
+                {t.rich(
+                  'Can’t find the event? Search for it on <link>TheSportsDB</link>, open the event page, and paste the numeric ID from the URL here.',
+                  {
+                    link: (chunks) => (
+                      <a
+                        href="https://www.thesportsdb.com/"
+                        target="_blank"
+                        rel="noreferrer"
+                        className="font-medium text-foreground underline underline-offset-4"
+                      >
+                        {chunks}
+                      </a>
+                    ),
+                  },
+                )}
+              </p>
             </div>
           ) : null}
         </div>
@@ -1402,25 +1419,6 @@ export default function AdminEventsTable({
       {sportsFinalError && <InputError message={sportsFinalError} />}
     </div>
   )
-
-  const sportsSourceManualLookupNotice =
-    sportsFinalEvent?.sports_vertical !== 'esports' ? (
-      <div className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-muted-foreground">
-        <CircleAlertIcon className="mt-0.5 size-4 shrink-0 text-amber-600" />
-        <p>
-          <a
-            href="https://www.thesportsdb.com/"
-            target="_blank"
-            rel="noreferrer"
-            className="font-medium text-foreground underline underline-offset-4"
-          >
-            TheSportsDB
-          </a>
-          {': '}
-          {t('search for the event, open its page, and copy the numeric ID from the URL.')}
-        </p>
-      </div>
-    ) : null
 
   return (
     <>
@@ -1770,7 +1768,6 @@ export default function AdminEventsTable({
                 )}
               </DrawerHeader>
               {sportsFinalFormFields}
-              {sportsSourceManualLookupNotice}
               <DrawerFooter className="mt-2 p-0">
                 <Button
                   type="button"
@@ -1814,7 +1811,6 @@ export default function AdminEventsTable({
               )}
             </DialogHeader>
             {sportsFinalFormFields}
-            {sportsSourceManualLookupNotice}
             <DialogFooter>
               <Button
                 type="button"
