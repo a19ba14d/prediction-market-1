@@ -60,6 +60,68 @@ describe('Toast', () => {
     expect(onAction).toHaveBeenCalledOnce()
   })
 
+  it('keeps title full-width while the description shares its row with the action', async () => {
+    render(<Toaster />)
+
+    act(() => {
+      toast.message('Enable push notifications', {
+        description: 'Get trade alerts from people you follow on this device.',
+        icon: <span aria-label="Push notifications" role="img" />,
+        action: { label: 'Enable', onClick: vi.fn() },
+      })
+    })
+
+    await screen.findByText('Enable push notifications')
+    expect(document.querySelector('[data-slot="toast-content"]')).toHaveClass('grid')
+    expect(document.querySelector('[data-slot="toast-body"]')).toHaveClass('col-start-2', 'col-end-4')
+    expect(document.querySelector('[data-slot="toast-description-row"]')).toHaveClass('col-start-2', 'col-end-3')
+    expect(document.querySelector('[data-slot="toast-actions"]')).toHaveClass('col-start-3', 'row-start-2')
+  })
+
+  it('keeps toasts without actions compact', async () => {
+    render(<Toaster />)
+
+    act(() => {
+      toast.success('Trade alerts enabled.')
+    })
+
+    await screen.findByText('Trade alerts enabled.')
+    expect(document.querySelector('[data-slot="toast-content"]')).toHaveClass('flex', 'py-3.5')
+    expect(document.querySelector('[data-slot="toast-content"]')).not.toHaveClass('grid')
+    expect(document.querySelector('[data-slot="toast-media"]')).not.toHaveClass('row-span-2')
+  })
+
+  it('supports a compact switch action', async () => {
+    const onAction = vi.fn()
+    render(<Toaster />)
+
+    act(() => {
+      toast.message('Enable push notifications', {
+        description: 'Get trade alerts from people you follow on this device.',
+        action: { control: 'switch', label: 'Enable', onClick: onAction },
+      })
+    })
+
+    fireEvent.click(await screen.findByRole('switch', { name: 'Enable' }))
+    expect(onAction).toHaveBeenCalledOnce()
+  })
+
+  it('keeps behind toasts opaque when the stack is expanded', async () => {
+    render(<Toaster />)
+
+    act(() => {
+      toast.message('First toast')
+      toast.message('Second toast')
+    })
+
+    await screen.findByText('Second toast')
+    const contents = document.querySelectorAll('[data-slot="toast-content"]')
+    expect(contents).toHaveLength(2)
+    contents.forEach((content) => {
+      expect(content).toHaveClass('[&[data-expanded][data-behind]]:opacity-100')
+    })
+  })
+
   it('supports an entirely clickable toast without making its close button navigate', async () => {
     const onClick = vi.fn()
     render(<Toaster />)

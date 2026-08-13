@@ -154,7 +154,7 @@ describe('CommunityFollowsProvider', () => {
       'Enable push notifications',
       expect.objectContaining({
         description: 'Get trade alerts from people you follow on this device.',
-        action: expect.objectContaining({ label: 'Enable' }),
+        action: expect.objectContaining({ control: 'switch', label: 'Enable' }),
       }),
     )
 

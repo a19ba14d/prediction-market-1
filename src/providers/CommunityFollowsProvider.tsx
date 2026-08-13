@@ -175,7 +175,7 @@ export function CommunityFollowsProvider({ children }: { children: ReactNode }) 
       duration: 12_000,
       action: needsSettings
         ? { label: t('Settings'), onClick: openSettings }
-        : { label: t('Enable'), onClick: () => void enableFromPrompt() },
+        : { control: 'switch', label: t('Enable'), onClick: () => void enableFromPrompt() },
     })
   }, [isIos, isStandalone, router, t, tradeAlerts])
 
