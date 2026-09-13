@@ -2,7 +2,7 @@ import { act, fireEvent, render, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, mock, spyOn, jest } from 'bun:test'
 
 import { buildHistoryWithLatestPointOverride } from '@/app/[locale]/(platform)/event/[slug]/_utils/EventChartUtils'
-import PredictionChart from '@/components/PredictionChart'
+import PredictionChart, { positionTooltipEntries } from '@/components/PredictionChart'
 
 const data = [
   { date: new Date('2026-01-01T00:00:00.000Z'), price: 45 },
@@ -57,6 +57,79 @@ afterEach(() => {
 })
 
 describe('predictionChart', () => {
+  it('keeps stacked tooltip labels inside the plot footer when space is tight', () => {
+    const positionedEntries = positionTooltipEntries(
+      Array.from({ length: 5 }, (_, index) => ({
+        key: `market-${index}`,
+        name: `Market ${index}`,
+        color: '#00ff00',
+        value: index,
+        initialTop: 80,
+      })),
+      10,
+      70,
+      24,
+      4,
+    )
+
+    expect(positionedEntries).toHaveLength(5)
+    expect(positionedEntries.every((entry) => entry.top >= 10 && entry.top + 24 <= 80)).toBe(true)
+    expect(positionedEntries.at(-1)?.top).toBe(56)
+  })
+
+  it('keeps tooltip labels below the cursor date label', () => {
+    const positionedEntries = positionTooltipEntries(
+      [
+        { key: 'market-0', name: 'Market 0', color: '#00ff00', value: 0, initialTop: 10 },
+        { key: 'market-1', name: 'Market 1', color: '#00ff00', value: 1, initialTop: 30 },
+        { key: 'market-2', name: 'Market 2', color: '#00ff00', value: 2, initialTop: 50 },
+      ],
+      10,
+      70,
+      24,
+      4,
+      30,
+    )
+
+    expect(positionedEntries.every((entry) => entry.top >= 30 && entry.top + 24 <= 80)).toBe(true)
+  })
+
+  it('packs labels forward when multiple values are clamped at the top', () => {
+    const positionedEntries = positionTooltipEntries(
+      Array.from({ length: 3 }, (_, index) => ({
+        key: `market-${index}`,
+        name: `Market ${index}`,
+        color: '#00ff00',
+        value: index,
+        initialTop: 0,
+      })),
+      10,
+      190,
+      24,
+      4,
+    )
+
+    expect(positionedEntries.map((entry) => entry.top)).toEqual([10, 38, 66])
+  })
+
+  it('rebalances the packed labels when the final position overflows the footer', () => {
+    const positionedEntries = positionTooltipEntries(
+      Array.from({ length: 5 }, (_, index) => ({
+        key: `market-${index}`,
+        name: `Market ${index}`,
+        color: '#00ff00',
+        value: index,
+        initialTop: index < 4 ? 30 + index * 2 : 136,
+      })),
+      10,
+      150,
+      24,
+      4,
+    )
+
+    expect(positionedEntries.map((entry) => entry.top)).toEqual([24, 52, 80, 108, 136])
+  })
+
   it('draws a quote-only market on canvas without SVG chart layers', async () => {
     const start = new Date('2026-07-30T12:00:00.000Z')
     const end = new Date('2026-07-30T13:00:00.000Z')

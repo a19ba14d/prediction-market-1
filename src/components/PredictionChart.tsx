@@ -26,6 +26,9 @@ import {
   DEFAULT_X_AXIS_TICKS,
   DEFAULT_Y_AXIS_MAX,
   snapTimestampToInterval,
+  resolveTooltipDateLabelTop,
+  TOOLTIP_DATE_LABEL_GAP,
+  TOOLTIP_DATE_LABEL_HEIGHT,
   TOOLTIP_LABEL_GAP,
   TOOLTIP_LABEL_HEIGHT,
   TOOLTIP_PANEL_LABEL_GAP,
@@ -191,48 +194,45 @@ function canAnimateDataTransition(fromData: DataPoint[], toData: DataPoint[], se
   })
 }
 
-function positionTooltipEntries(
+export function positionTooltipEntries(
   entries: TooltipEntry[],
   marginTop: number,
   innerHeight: number,
   labelHeight: number,
   labelGap: number,
+  minimumTop = marginTop,
 ) {
   if (!entries.length) {
     return []
   }
 
-  const minTop = marginTop
-  const maxTop = Math.max(minTop, marginTop + innerHeight - labelHeight)
-  const step = labelHeight + labelGap
-  const positioned = entries
-    .slice()
-    .sort((left, right) => left.initialTop - right.initialTop)
-    .reduce<PositionedTooltipEntry[]>((result, entry) => {
-      const desiredTop = Math.max(minTop, Math.min(entry.initialTop, maxTop))
-      const previousTop = result.at(-1)?.top
-      result.push({
-        ...entry,
-        top: previousTop == null ? desiredTop : Math.max(desiredTop, previousTop + step),
-      })
-      return result
-    }, [])
+  const maxTop = Math.max(marginTop, marginTop + innerHeight - labelHeight)
+  const minTop = Math.min(Math.max(marginTop, minimumTop), maxTop)
+  const requestedStep = labelHeight + labelGap
+  const availableTopRange = Math.max(0, maxTop - minTop)
+  const step =
+    entries.length > 1 ? Math.min(requestedStep, availableTopRange / Math.max(1, entries.length - 1)) : requestedStep
+  const sortedEntries = entries.slice().sort((left, right) => left.initialTop - right.initialTop)
+  const positionedEntries = sortedEntries.reduce<PositionedTooltipEntry[]>((result, entry) => {
+    const desiredTop = Math.max(minTop, Math.min(entry.initialTop, maxTop))
+    const previousTop = result.at(-1)?.top
+    const top = previousTop == null ? desiredTop : Math.max(desiredTop, previousTop + step)
+    result.push({ ...entry, top })
+    return result
+  }, [])
 
-  const overflow = positioned.at(-1)!.top - maxTop
-  if (overflow > 0) {
-    positioned.forEach((entry) => {
-      entry.top -= overflow
-    })
+  if (positionedEntries.at(-1)!.top <= maxTop) {
+    return positionedEntries
   }
 
-  const underflow = minTop - positioned[0].top
-  if (underflow > 0) {
-    positioned.forEach((entry) => {
-      entry.top += underflow
-    })
+  const rebalancedEntries = positionedEntries.slice()
+  rebalancedEntries[rebalancedEntries.length - 1].top = maxTop
+  for (let index = rebalancedEntries.length - 2; index >= 0; index -= 1) {
+    const nextTop = rebalancedEntries[index + 1].top
+    rebalancedEntries[index].top = Math.max(minTop, Math.min(rebalancedEntries[index].top, nextTop - step))
   }
 
-  return positioned
+  return rebalancedEntries
 }
 
 export default function PredictionChart({
@@ -625,6 +625,12 @@ export default function PredictionChart({
     innerHeight,
     tooltipLabelVariant === 'panel' ? TOOLTIP_PANEL_LABEL_HEIGHT : TOOLTIP_LABEL_HEIGHT,
     tooltipLabelVariant === 'panel' ? TOOLTIP_PANEL_LABEL_GAP : TOOLTIP_LABEL_GAP,
+    Math.max(
+      resolvedMargin.top,
+      resolveTooltipDateLabelTop(resolvedMargin.top, Boolean(tooltipHeader && tooltipEntries.length)) +
+        TOOLTIP_DATE_LABEL_HEIGHT +
+        TOOLTIP_DATE_LABEL_GAP,
+    ),
   )
 
   const gridLineColor = neutralAxisColors
